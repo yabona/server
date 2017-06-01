@@ -70,9 +70,24 @@ Set-VMMemory -VMName vmNoah_1 -DynamicMemoryEnabled:$true -MaximumBytes 1GB
 
 get-vm | fl *
 
-Add-ClusterVirtualMachineRole -VMname vm-name 
+
+Get-ClusterNode | % {get-vm -computername $_.Name} | fl ComputerName,VMName
+
+# ad config:
+Import-Module ActiveDirectory
+$clusterSID = (Get-adcomputer fcc).sid.value
+dsacls 'ou=foc,ou=infra,dc=ad,dc=elgoog,dc=com' /G $clusterSID`:DC
+dsacls 'ou=foc,ou=infra,dc=ad,dc=elgoog,dc=com' /G $clusterSID`:CC
+
+# scaleout
+Install-WindowsFeature FS-File-Server -IncludeManagementTools
 Add-ClusterScaleOutFileServerRole -name WebApp
-	
+mkdir C:\ClusterStorage\Volume1\WebApp
+net share WEBAPP=C:\ClusterStorage\Volume1\WebApp /GRANT:Everyone,FULL
+
+Add-ClusterVirtualMachineRole -VMname vm-name 
+Move-ClusterVirtualMachineRole -Name vmNoah_1 -Node fc1
+
 test-cluster 
 Get-ClusterNetwork
 cluadmin.msc
