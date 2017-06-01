@@ -18,7 +18,7 @@ Workflow Configure_System {
     Restart-Computer -Wait
 
     # domain join
-    Add-computer -DomainName $domainName -restart -Credential (Get-Credential) 
+    Add-computer -DomainName $domainName -restart -Credential $domainCred 
 
     # todo :: add serverRole instalation step after this...
 }
@@ -27,6 +27,7 @@ Workflow Configure_System {
 # setup hostname
 $hostName = Read-Host "Hostname"
 $domainName = Read-host "AD Domain Name"
+$domainCred = Get-Credential 
 
 
 # Configure networking
