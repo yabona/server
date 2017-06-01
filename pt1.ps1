@@ -6,12 +6,15 @@ Set-DnsClientServerAddress -interfacealias [PROD] -ServerAddress 192.168.200.10
 Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
 
 Rename-Computer -NewName $compName -Restart 
-Add-Computer -DomainName ad.elgoog.com -OUPath "ou=Servers,dc=ad,dc=elgoog,dc=com" -Credential (Get-Credential) -Restart
+Add-Computer -DomainName ad.elgoog.com -OUPath "ou=Servers,dc=ad,dc=elgoog,dc=com" `
+    -Credential (Get-Credential) -Restart
 
 # ====================================================================== #
 # DC
 install-windowsfeature ad-domian-services
-Install-ADDSForest -CreateDNSDelegation:$false -DomainName "<domian.com>" -DomainMode "Win2012" -ForestMode "Win2012" -InstallDNS:$True -SafeModeAdministratorPassword ((Get-Credential).Password) -Force:$true
+Install-ADDSForest -CreateDNSDelegation:$false -DomainName "<domian.com>" `
+    -DomainMode "Win2012" -ForestMode "Win2012" -InstallDNS:$True `
+    -SafeModeAdministratorPassword ((Get-Credential).Password) -Force:$true
 
 # ====================================================================== #
 # routing
@@ -20,7 +23,8 @@ Get-NetAdapter | Set-NetIpInterface -Forwarding Enabled
 
 # ====================================================================== #	
 # NLB
-New-NlbCluster -interfacename [PROD] -clusterPrimaryIP [IP] -clusterName [Intranet] -operationMode Multicast
+New-NlbCluster -interfacename [PROD] -clusterPrimaryIP [IP] `
+    -clusterName [Intranet] -operationMode Multicast
 Get-NlnClusterPortRule | Remove-NlbClusterPortRule
 Add-NlbClusterPortRule -protocol tcp -startport 80 -endport 80 -interfacename PROD 
 Add-NlbClusterNode -interfaceName PROD -newNodeName WEB2 -newNodeInterface PROD 
@@ -33,7 +37,7 @@ Get-NlbClusterNode
 Install-WindowsFeature fs-iscsitarget-server -IncludeManagementTools
 
 New-IscsiVirtualDisk -SizeBytes 10GB -path C:\iSCSIVirtualDisks\TEST2.vhdx
-New-IscsiServerTarget -TargetName TEST2 -InitiatorIds IPaddress:10.11.12.13,IPaddress:172.30.20.10,etc 
+New-IscsiServerTarget -TargetName TEST2 -InitiatorIds IPaddress:10.11.12.13,etc 
     #Include cluster IP, all nodes' interfaces..
 Add-IscsiVirtualDiskTargetMapping -TargetName TEST2 -Path C:\iSCSIVirtualDisks\TEST2.vhdx
 
@@ -83,7 +87,7 @@ dsacls 'ou=foc,ou=infra,dc=ad,dc=elgoog,dc=com' /G $clusterSID`:CC
 Install-WindowsFeature FS-File-Server -IncludeManagementTools
 Add-ClusterScaleOutFileServerRole -name WebApp
 mkdir C:\ClusterStorage\Volume1\WebApp
-net share WEBAPP=C:\ClusterStorage\Volume1\WebApp /GRANT:Everyone,FULL
+# \\webapp\
 
 Add-ClusterVirtualMachineRole -VMname vm-name 
 Move-ClusterVirtualMachineRole -Name vmNoah_1 -Node fc1
@@ -94,8 +98,8 @@ cluadmin.msc
 
 # ====================================================================== #
 # iscsicpl
-connect-advanced-CHAP
-Initialize-format-etc. 
+    connect-advanced-CHAP
+    Initialize-format-etc. 
 start-service msiscsi
 sc --% config msiscsi start=auto
 
@@ -139,7 +143,7 @@ Install-WindowsFeature fs-resource-manager -IncludeManagementTools
     #Create template ACL
     new-item -Type file -name acl.txt
     icacls --% acl.txt /reset
-    icacls --% acl.txt /grant:r ad\Exec:(M) /grant:r system:(F) /inheritance:r /t
+    icacls --% acl.txt /grant:r ad\Exec:(M) /grant:r system:(F) /inheritance:r 
 
     # Create Central Access Rule with template as CURRENT perms
     $acl = (get-acl acl.txt).Sddl 
@@ -165,8 +169,19 @@ Install-WindowsFeature fs-resource-manager -IncludeManagementTools
     # Eval: Re-Evaluate, Aggregate
 # Set Everyone:Modify on NTFS perms
 
+set-acl C:\$share -CentralAccessPolicy IT_CApolicy -AclObject (Get-Acl $share)
+icacls --% C:\Share /grant:r *s-1-1-0:(CI)(OI)(M) /inheritance:r
+icacls --% C:\Share /grant:r *s-1-5-18:(CI)(OI)(F) 
+
 # ====================================================================== #
 # features-on-demand
 Get-WindowsFeature | ? { !($_.InstallState -eq "Installed") } | Uninstall-WindowsFeature -Remove
 
 # ====================================================================== #
+
+<#
+gotchas: 
+ 1. make sure there's proof nlb is running (use dennis)
+ 2. 
+
+ #>
