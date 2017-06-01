@@ -82,6 +82,7 @@ cluadmin.msc
 connect-advanced-CHAP
 Initialize-format-etc. 
 start-service msiscsi
+sc --% config msiscsi start=auto
 
 iscsicli addtarget iqn..... 
 diskpart
