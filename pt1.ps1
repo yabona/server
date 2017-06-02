@@ -87,7 +87,11 @@ dsacls 'ou=foc,ou=infra,dc=ad,dc=elgoog,dc=com' /G $clusterSID`:CC
 Install-WindowsFeature FS-File-Server -IncludeManagementTools
 Add-ClusterScaleOutFileServerRole -name WebApp
 mkdir C:\ClusterStorage\Volume1\WebApp
-# \\webapp\
+# webserver config
+Install-WindowsFeature Web-Server -IncludeManagementTools
+Set-ItemProperty 'IIS:\Sites\Default Web Site' -name PhysicalPath -Value \\webapp\Site
+Set-ItemProperty 'IIS:\Sites\Default Web Site' -name userName -value "Administrator"
+Set-ItemProperty 'IIS:\Sites\Default Web Site' -name Password -value "Windows1"
 
 Add-ClusterVirtualMachineRole -VMname vm-name 
 Move-ClusterVirtualMachineRole -Name vmNoah_1 -Node fc1
@@ -128,37 +132,37 @@ net share BC_Share=C:\BranchCache /GRANT:Everyone,FULL /CACHE:BranchCache
 # dynamic Access
 Install-WindowsFeature fs-resource-manager -IncludeManagementTools 
 # Edit DomainControllers policy to support claims
-    # CompConfig\Policies\AdminTemplates\System\KDC
-        #> KDC Support for Claims... [Supported]
+# CompConfig\Policies\AdminTemplates\System\KDC
+    #> KDC Support for Claims... [Supported]
 
-    # Set Confidentilaity resource ENABLE
-    $confid = Get-ADResourceProperty -filter {DisplayName -eq "Confidentiality"} 
-    Set-ADResourceProperty -Identity:$confid -Enabled:$true
+# Set Confidentilaity resource ENABLE
+$confid = Get-ADResourceProperty -filter {DisplayName -eq "Confidentiality"} 
+Set-ADResourceProperty -Identity:$confid -Enabled:$true
 
-    # Create resoucePropertyList
-    New-ADResourcePropertyList -Name Exec_RPL -ProtectedFromAccidentalDeletion:$false 
-    $PropList = Get-ADResourcePropertyList -filter {Name -eq "Exec_RPL"}
-    Add-ADResourcePropertyListMember -Identity $propList -Members $confid 
+# Create resoucePropertyList
+New-ADResourcePropertyList -Name Exec_RPL -ProtectedFromAccidentalDeletion:$false 
+$PropList = Get-ADResourcePropertyList -filter {Name -eq "Exec_RPL"}
+Add-ADResourcePropertyListMember -Identity $propList -Members $confid 
 
-    #Create template ACL
-    new-item -Type file -name acl.txt
-    icacls --% acl.txt /reset
-    icacls --% acl.txt /grant:r ad\Exec:(M) /grant:r system:(F) /inheritance:r 
+#Create template ACL
+new-item -Type file -name acl.txt
+icacls --% acl.txt /reset
+icacls --% acl.txt /grant:r ad\Exec:(M) /grant:r system:(F) /inheritance:r 
 
-    # Create Central Access Rule with template as CURRENT perms
-    $acl = (get-acl acl.txt).Sddl 
-    New-ADCentralAccessRule -CurrentAcl:$acl `
-        -Name:"EXEC_CARule" `
-        -ResourceCondition:"(@RESOURCE.Confidentiality_MS == 3000)"
+# Create Central Access Rule with template as CURRENT perms
+$acl = (get-acl acl.txt).Sddl 
+New-ADCentralAccessRule -CurrentAcl:$acl `
+    -Name:"EXEC_CARule" `
+    -ResourceCondition:"(@RESOURCE.Confidentiality_MS == 3000)"
 
-    #Create Policy and Add Member(s)
-    New-ADCentralAccessPolicy -name Exec_CAPolicy 
-    Add-ADCentralAccessPolicyMember -Identity Exec_CAPolicy -Members Exec_CARule
+#Create Policy and Add Member(s)
+New-ADCentralAccessPolicy -name Exec_CAPolicy 
+Add-ADCentralAccessPolicyMember -Identity Exec_CAPolicy -Members Exec_CARule
 
-    #Show-Commands
-    Get-ADResourcePropertyList -filter *
-    Get-ADCentralAccessRule -filter *
-    Get-ADCentralAccessPolicy -filter *
+#Show-Commands
+Get-ADResourcePropertyList -filter *
+Get-ADCentralAccessRule -filter *
+Get-ADCentralAccessPolicy -filter *
 
 # GPMC:DefaultDomain
     # Comp/Policies/Windows/Sec/FileSystem/CentralAccessPolicy
@@ -175,7 +179,7 @@ icacls --% C:\Share /grant:r *s-1-5-18:(CI)(OI)(F)
 
 # ====================================================================== #
 # features-on-demand
-Get-WindowsFeature | ? { !($_.InstallState -eq "Installed") } | Uninstall-WindowsFeature -Remove
+Get-WindowsFeature | ? { ($_.Installed -eq $false) } | Uninstall-WindowsFeature -Remove
 
 # ====================================================================== #
 
@@ -185,3 +189,5 @@ gotchas:
  2. 
 
  #>
+
+# NOAH BAILEY # PT1
