@@ -55,7 +55,7 @@ Get-IscsiSession | fl *
 install-windowsfeature Hyper-V,Failover-Clustering -includemanagementTools
 new-cluster -name [clustername] -node [node1],[node2] -staticAddress [192.168.200.30
 	
-Set-ClusterQuorum -fileshareWitness 
+Set-ClusterQuorum -fileshareWitness \\dc\quorum
 	
 Get-Disk [1] | Add-ClusterDisk 
 Get-ClusterAvailableDisk | Add-ClusterSharedDisk 
@@ -63,14 +63,14 @@ Get-ClusterAvailableDisk | Add-ClusterSharedDisk
 Add-ClusterSharedVolume -Name "Cluster Disk 1"
 
 mkdir \ClusterStorage\Volume1\Hyper-V
-mkdir \ClusterStorage\Volume1\Hyper-V\vmNoah_1
-mkdir \ClusterStorage\Volume1\Hyper-V\vmNoah_2 
+mkdir \ClusterStorage\Volume1\Hyper-V\vm_1
+mkdir \ClusterStorage\Volume1\Hyper-V\vm_2 
 
 New-VMSwitch -Name ext_PROD -AllowManagementOS:$true -NetAdapterName PROD 
-New-VHD -Dynamic -Path C:\ClusterStorage\Volume1\Hyper-V\vmNoah_1\vmNoah_1.vhdx -SizeBytes 20GB
-New-VM -name vmNoah_1 -Generation 1 -MemoryStartupBytes 512MB -SwitchName ext_PROD `
-	-Path C:\ClusterStorage\Volume1\Hyper-V\ -VHDPath C:\ClusterStorage\Volume1\Hyper-V\vmNoah_1\vmNoah_1.vhdx 
-Set-VMMemory -VMName vmNoah_1 -DynamicMemoryEnabled:$true -MaximumBytes 1GB 
+New-VHD -Dynamic -Path C:\ClusterStorage\Volume1\Hyper-V\vm_1\vm_1.vhdx -SizeBytes 20GB
+New-VM -name vm_1 -Generation 1 -MemoryStartupBytes 512MB -SwitchName ext_PROD `
+	-Path C:\ClusterStorage\Volume1\Hyper-V\ -VHDPath C:\ClusterStorage\Volume1\Hyper-V\vm_1\vmN_1.vhdx 
+Set-VMMemory -VMName vm_1 -DynamicMemoryEnabled:$true -MaximumBytes 1GB 
 
 get-vm | fl *
 
@@ -94,7 +94,7 @@ Set-ItemProperty 'IIS:\Sites\Default Web Site' -name userName -value "Administra
 Set-ItemProperty 'IIS:\Sites\Default Web Site' -name Password -value "Windows1"
 
 Add-ClusterVirtualMachineRole -VMname vm-name 
-Move-ClusterVirtualMachineRole -Name vmNoah_1 -Node fc1
+Move-ClusterVirtualMachineRole -Name vmN_1 -Node fc1
 
 test-cluster 
 Get-ClusterNetwork
