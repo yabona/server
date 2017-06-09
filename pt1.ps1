@@ -55,7 +55,7 @@ Get-IscsiSession | fl *
 install-windowsfeature Hyper-V,Failover-Clustering -includemanagementTools
 new-cluster -name [clustername] -node [node1],[node2] -staticAddress [192.168.200.30
 	
-Set-ClusterQuorum -fileshareWitness 
+Set-ClusterQuorum -fileshareWitness \\dc\quorum
 	
 Get-Disk [1] | Add-ClusterDisk 
 Get-ClusterAvailableDisk | Add-ClusterSharedDisk 
@@ -63,14 +63,14 @@ Get-ClusterAvailableDisk | Add-ClusterSharedDisk
 Add-ClusterSharedVolume -Name "Cluster Disk 1"
 
 mkdir \ClusterStorage\Volume1\Hyper-V
-mkdir \ClusterStorage\Volume1\Hyper-V\vmNoah_1
-mkdir \ClusterStorage\Volume1\Hyper-V\vmNoah_2 
+mkdir \ClusterStorage\Volume1\Hyper-V\vm_1
+mkdir \ClusterStorage\Volume1\Hyper-V\vm_2 
 
 New-VMSwitch -Name ext_PROD -AllowManagementOS:$true -NetAdapterName PROD 
-New-VHD -Dynamic -Path C:\ClusterStorage\Volume1\Hyper-V\vmNoah_1\vmNoah_1.vhdx -SizeBytes 20GB
-New-VM -name vmNoah_1 -Generation 1 -MemoryStartupBytes 512MB -SwitchName ext_PROD `
-	-Path C:\ClusterStorage\Volume1\Hyper-V\ -VHDPath C:\ClusterStorage\Volume1\Hyper-V\vmNoah_1\vmNoah_1.vhdx 
-Set-VMMemory -VMName vmNoah_1 -DynamicMemoryEnabled:$true -MaximumBytes 1GB 
+New-VHD -Dynamic -Path C:\ClusterStorage\Volume1\Hyper-V\vm_1\vm_1.vhdx -SizeBytes 20GB
+New-VM -name vm_1 -Generation 1 -MemoryStartupBytes 512MB -SwitchName ext_PROD `
+	-Path C:\ClusterStorage\Volume1\Hyper-V\ -VHDPath C:\ClusterStorage\Volume1\Hyper-V\vm_1\vmN_1.vhdx 
+Set-VMMemory -VMName vm_1 -DynamicMemoryEnabled:$true -MaximumBytes 1GB 
 
 get-vm | fl *
 
@@ -94,7 +94,7 @@ Set-ItemProperty 'IIS:\Sites\Default Web Site' -name userName -value "Administra
 Set-ItemProperty 'IIS:\Sites\Default Web Site' -name Password -value "Windows1"
 
 Add-ClusterVirtualMachineRole -VMname vm-name 
-Move-ClusterVirtualMachineRole -Name vmNoah_1 -Node fc1
+Move-ClusterVirtualMachineRole -Name vmN_1 -Node fc1
 
 test-cluster 
 Get-ClusterNetwork
@@ -184,10 +184,32 @@ Get-WindowsFeature | ? { ($_.Installed -eq $false) } | Uninstall-WindowsFeature 
 # ====================================================================== #
 
 <#
-gotchas: 
- 1. make sure there's proof nlb is running (use dennis)
- 2. 
 
+/Td6WFoAAAFpIt42AgAhAQAAAAA3J5fW4AxiBD9dABBrh0X7KZxyvHRcmGscEcFp
+6PB+d/0ZDPJPF8EB+XfiotSrbaz93z8+gO7M6yH3CYsYdsHm6/IYZ47ju5z0o8Fk
+xTL852SM3tPu6eh8HT7lXPPfwronchnIa2N4Yls4JxRKKsFXgEpHoOaJmAP6W3j6
+7xzhW30WHWIHylC58bkDWfSqYKkjzVa9RMt6izUZ73lFbXbNGwM7s1bW6IXjriYs
+MP8i2oDJBfyqQJvFgiq/xVONhs3Bbnpi2CHgSIbXvxzCefmFgnsEQuiOY+5G5MGe
+Dr+hFkgqclEAVgAmdmwMgwBprJ/9kPZZhdBcN1jqym9WyCFhM6Fc0Sr5ftUWIdzi
+OHuS2apaazY1KY9diTvadj6JlRKltk79/21HA4n7njYs5xa1FBNSZlABt9n8yDBT
+BEeKJF8ycqQWJ2x/HJSrUfRywqS//L5yx1u0kqYw6K/JtRwLyeVlftu9BguMJajE
+mQwsaxWIfxXsOsAemUEl1BQCpMN7+Onvyg2LnRC/bbFGOJFB0AqN+nHamsfKmfz2
+jEJXdNu3+w0lTxjHQZ9y/swnD/yqQ2aE7nOUhWgMwML+n81ZZhJrFxjfODeUfQXn
+pscgB63FTeSyaX6EnkUQExYV+6PPuoXGPm8KOHsSySse3UddiGjLUoNLloCC3nNs
+121AC/z6371xmlasJkThk8hwlK1NUx/YR8RRmrRzzAFPxDk/rPfaa7ZsNFN+Yp8c
+aptPm5sz6KwYCGhfSDx6osB3B4E3C3hFVN93bp8XzNrhiMwniIlhe3ro0jLB0BIY
+f85RbqQgZatHkkKvmzjdnaOrv4K/uYOpBya5f/AuSFZrgc54eu20g2ZXXwVQlVWb
+0rPZK3/ddyvvS6xvj2qiG0hXUPlyptrwpeBfVdkSrmuKnuVuLHLdRqkm5yNrWBFy
+/YlMba0/8WzxTx9bMZm1sFOWRL9ccb8qX2E2ZCTVeKigjjnTWTQZv5Gb+biXhPre
+BgcC5Q1LJaIxDsJyYowCWHi07co4nda09O3WiW1XAupClJZXQfSYx79//A8Xr8JI
+f87k0HhEvb8H2Perv2vIy9ULp9tI5uQe1TmdfsqIDlxpkNlXxWp+EScjT70cpZDa
+lu/HNkuDi7H7ylCq1buTBA+kxKlslSmyXcJR8DSmqDRBdH7jJVsmBoEwyMLsb8A1
+UUybp0ODO49qIIk5wfURt53YhBSKNEIcDGqJ6CvLTO7IqTXl5UbdwTHjPapHFHmo
+ehvca/mKJjyc0YjDXUwEW9J4KkZk5f1No3IojCb66hvxtgMk5ufkaXneSl6uPYNM
+Z11/45HXctlCzgCHNNLovux3H5/8SV1TrR3EWcuDMWkLHA1Mg5Qifx0/txSopspI
+xFQuLS5qR/KtJEDRVGbAAyiQRQGuTi4ShMnY1hdosjVeQY3V3fNIZ3eqDJVYLs1P
+YlxxH0NfcTpwCgWNuEsAADmV3YEAAdcI4xgAAJWv4So+MA2LAgAAAAABWVo=
+
+.txt.xz.txt
  #>
 
-# NOAH BAILEY # PT1
