@@ -28,3 +28,19 @@ Get-NetAdapter | Set-NetIpInterface -Forwarding Enabled
 # ====================================================================== #
 Install-WindowsFeature fs-iscsitarget-server -IncludeManagementTools
 
+New-IscsiVirtualDisk -SizeBytes 30GB -path C:\ISCSI-DISKS\DC1.vhdx
+New-IscsiVirtualDisk -SizeBytes 60GB -path C:\ISCSI-DISKS\HV1.vhdx
+
+New-IscsiServerTarget -targetname DC1 -InitiatorIds IPaddress:192.168.100.10
+New-IscsiServerTarget -targetname HV1 -InitiatorIds IPaddress:192.168.100.21
+
+    
+Add-IscsiVirtualDiskTargetMapping -TargetName DC1 -Path C:\ISCSI-DISKS\DC1.vhdx
+Add-IscsiVirtualDiskTargetMapping -TargetName HV1 -Path C:\ISCSI-DISKS\HV1.vhdx
+
+# ======================================================================== #
+Install-WindowsFeature Windows-server-backup -IncludeManagementTools
+
+Add-DhcpServerv4Scope -StartRange 192.168.100.50 -EndRange 192.168.100.100 -Name DHCP
+Set-DhcpServerv4OptionDefinition 
+
