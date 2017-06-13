@@ -117,6 +117,7 @@ Get-VM | Start-VMInitialReplication
 
 # Failover 
 Get-VM | Stop-VM
+
 # move to replica server...
 Start-VMFailover ms1-core -Prepare
 Start-VMFailover -VMName MS1-core -ComputerName hv2
@@ -153,7 +154,7 @@ Get-VMNetworkAdapterFailoverConfiguration -ComputerName HV2 -VMName MS1-Core
 # ======================================== #
 # Extra Goodies #
 
-Get-ADComputer -filter * | % { Invoke-GPUpdate -Computer $_.dnshostname -Force -AsJob } 
+Get-ADComputer -filter *|%{Invoke-GPUpdate -Computer $_.dnshostname -Force -AsJob} 
 
 $serverList = (Get-ADComputer -filter {name -notlike "*DC*"} ).dnsHostName
 foreach ($i in $serverList) { Stop-Computer -ComputerName $i -AsJob -force } 
