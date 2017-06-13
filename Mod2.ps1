@@ -6,6 +6,9 @@ Set-DnsClientServerAddress -interfacealias PROD -ServerAddress 192.168.100.10
 
 Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
 
+# core machine only
+Set-displayresolution -height 600 -width 800 -force
+
 Rename-Computer -NewName $compName -Restart 
 
 wmic --% useraccount where name="Administrator" rename LocalAdmin
@@ -33,7 +36,6 @@ New-IscsiVirtualDisk -SizeBytes 60GB -path C:\ISCSI-DISKS\HV1.vhdx
 
 New-IscsiServerTarget -targetname DC1 -InitiatorIds IPaddress:192.168.100.10
 New-IscsiServerTarget -targetname HV1 -InitiatorIds IPaddress:192.168.100.21
-
     
 Add-IscsiVirtualDiskTargetMapping -TargetName DC1 -Path C:\ISCSI-DISKS\DC1.vhdx
 Add-IscsiVirtualDiskTargetMapping -TargetName HV1 -Path C:\ISCSI-DISKS\HV1.vhdx
@@ -41,7 +43,7 @@ Add-IscsiVirtualDiskTargetMapping -TargetName HV1 -Path C:\ISCSI-DISKS\HV1.vhdx
 (Get-IscsiServerTarget).TargetIqn
 
 # -- -- -- -- 
-# On DC/backupbox
+# On HV-node/initiator end...
 
 net start msiscsi
 sc config msiscsi start=auto
@@ -53,6 +55,8 @@ diskpart
  > attrib disk clear readonly 
  > create partition primary
  > format quick fs=NTFS label="ISCSI-SAN1"
+ > select volume [3]
+ > assign letter=E
 iscsicpl.exe
 
 # ======================================================================== #
@@ -60,8 +64,9 @@ iscsicpl.exe
 Install-WindowsFeature Windows-server-backup -IncludeManagementTools
 
 wbadmin start backup -backuptarget:\\dc1\e$ -AllCritical 
+Stop-Computer -force
 
-
+# create dhcp scope on DC...
 Add-DhcpServerv4Scope -StartRange 192.168.100.50 -EndRange 192.168.100.100 -SubnetMask 255.255.255.0 -Name DHCP
 Set-DhcpServerv4OptionValue -OptionId 003 -ScopeId 192.168.100.0 -Value 192.168.100.254 
 Set-DhcpServerv4OptionValue -OptionId 006 -ScopeId 192.168.100.0 -Value 192.168.100.10
@@ -76,6 +81,25 @@ New-Vhd -dynamic -path X:\Hyper-V\MS1.vhdx -SizeBytes 20GB
 New-VM -name MS1 -generation 1 -memoryStartupBytes 512MB -switchname ext_PROD `
     -path x:\Hyper-v\ -vhdpath X:\hyper-v\ms1.vhdx
 Set-VMMemory -vmname MS1 -DynamicMemoryEnabled:$True -MaximumBytes 1GB
+
+# ========================================= #
+# recovery (read up on this)
+
+<# Insert WinPE disk
+ # boot machine in HV
+ # Connect to DC1 and load image
+ #>
+
+ # shift + f10
+ diskpart 
+  > sel disk 1
+  > clean
+  > create part primary
+  > format fs=NTFS label="BOOT" quick
+ netsh int ipv4 set address Name=Ethernet0 static 192.168.100.12 255.255.255.0 
+ pushd \\dc1\e$
+ wbadmin get versions -backuptarget:\\dc1\e$
+ wbadmin start sysrecovery -version:[guid] -machine MS1 -recoverytarget:C:\ -restoreAllVolumes -recreateDisks
 
 <#
  # Replication... 
@@ -93,13 +117,13 @@ Get-VM | Start-VMInitialReplication
 
 # Failover 
 Get-VM | Stop-VM
-# move VM to secondary...
+# move to replica server...
 Start-VMFailover ms1-core -Prepare
 Start-VMFailover -VMName MS1-core -ComputerName hv2
 set-vmreplication -reverse -vmname ms1-core -ComputerName HV2
 Start-VM -name ms1-core -ComputerName hv2
 
-# move back to primary
+# move back to primary server...
 Start-VMFailover ms1-core -Prepare
 Start-VMFailover -vmname ms1-core -computername hv1
 Set-VMReplication -reverse -vmname ms1-core -computername hv1
@@ -129,7 +153,7 @@ Get-VMNetworkAdapterFailoverConfiguration -ComputerName HV2 -VMName MS1-Core
 # ======================================== #
 # Extra Goodies #
 
-Get-ADComputer -filter * | % { Invoke-GPUpdate -Computer $_.dnshostname -AsJob } 
+Get-ADComputer -filter * | % { Invoke-GPUpdate -Computer $_.dnshostname -Force -AsJob } 
 
 $serverList = (Get-ADComputer -filter {name -notlike "*DC*"} ).dnsHostName
 foreach ($i in $serverList) { Stop-Computer -ComputerName $i -AsJob -force } 
