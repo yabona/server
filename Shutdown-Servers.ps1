@@ -1,9 +1,7 @@
-﻿# shutdown all nodes
+# Shutdown all VMs: 
+Get-ADComputer -filter * | Stop-Computer -force -asjob -computerName $_.dnsHostName
 
-$servers = (Get-adcomputer -filter {name -notlike "*dc*"} ).DnsHostName
-
-ForEach ($i in $servers) {
-    Invoke-Command -ComputerName $i -ScriptBlock {Stop-Computer -force} -AsJob
-}  get-job | Wait-Job
-
-Stop-Computer
+# Shutdown only member-servers, no DCs:
+$serverList = (Get-ADComputer -filter {name -notlike "*DC*"} ).dnsHostName
+foreach ($i in $serverList) { Stop-Computer -ComputerName $i -AsJob -force }
+Get-Job | Wait-Job ; Stop-Computer
