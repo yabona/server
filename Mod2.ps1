@@ -1,5 +1,11 @@
 ﻿# ====================================================================== #
 # Config 
+Shift+F10
+ > wmic useraccount where name="Administrator" rename LocalAdmin 
+ > net user LocalAdmin /active:yes
+ > net user LocalAdmin * 
+# done.
+
 Get-Netadapter Ethernet* | Rename-Netadapter -NewName PROD
 New-NetIpAddress -interfacealias PROD -ipaddress 192.168.100.10 -prefixlength 24 -defaultGateway 192.168.100.254
 Set-DnsClientServerAddress -interfacealias PROD -ServerAddress 192.168.100.10 
@@ -11,22 +17,32 @@ Set-displayresolution -height 600 -width 800 -force
 
 Rename-Computer -NewName $compName -Restart 
 
-wmic --% useraccount where name="Administrator" rename LocalAdmin
-
 Add-Computer -DomainName ad.elgoog.com -OUPath "ou=infra,dc=fanco,dc=com"  -Restart
 
 # ====================================================================== #
 # DC
-install-windowsfeature ad-domian-services
+install-windowsfeature ad-domain-services
+
+# ForestRoot domain
 Install-ADDSForest -CreateDNSDelegation:$false -DomainName "fanco.com" `
     -DomainMode "Win2012" -ForestMode "Win2012" -InstallDNS:$True `
     -SafeModeAdministratorPassword ((Get-Credential).Password) -Force:$true
 
+# Child-domain
+
 # ====================================================================== #
 # router configuration
-
 Install-WindowsFeature Routing -IncludeManagementTools
 Get-NetAdapter | Set-NetIpInterface -Forwarding Enabled 
+
+# NAT config
+Install-RemoteAccess -VpnType Vpn
+NETSH routing ip nat add interface EXT-NAT
+NETSH routing ip nat set interface EXT-NAT mode=full
+NETSH routing ip nat add interface PROD mode=private
+#Show command: 
+NETSH routing ip nat dump
+
 
 # ====================================================================== #
 Install-WindowsFeature fs-iscsitarget-server -IncludeManagementTools
@@ -63,14 +79,28 @@ iscsicpl.exe
 # On memberserver
 Install-WindowsFeature Windows-server-backup -IncludeManagementTools
 
+diskpart 
+ > sel vol []
+ > shrink querymax 
+ > shrink desired=50000
+
 wbadmin start backup -backuptarget:\\dc1\e$ -AllCritical 
 Stop-Computer -force
+
+
+# ======================================================================== #
+# DHCP Config...
 
 # create dhcp scope on DC...
 Add-DhcpServerv4Scope -StartRange 192.168.100.50 -EndRange 192.168.100.100 -SubnetMask 255.255.255.0 -Name DHCP
 Set-DhcpServerv4OptionValue -OptionId 003 -ScopeId 192.168.100.0 -Value 192.168.100.254 
 Set-DhcpServerv4OptionValue -OptionId 006 -ScopeId 192.168.100.0 -Value 192.168.100.10
 Set-DhcpServerv4OptionValue -optionid 0015 -ScopeId 192.168.100.0 -Value "fanco.com"
+
+# Set policy on DHCP server
+
+# client side settings
+ipconfig /setclassid PROD "FastInternet"
 
 # ======================================== #
 # configure virtualization
@@ -85,21 +115,21 @@ Set-VMMemory -vmname MS1 -DynamicMemoryEnabled:$True -MaximumBytes 1GB
 # ========================================= #
 # recovery (read up on this)
 
-<# Insert WinPE disk
- # boot machine in HV
- # Connect to DC1 and load image
- #>
-
  # shift + f10
  diskpart 
   > sel disk 1
   > clean
-  > create part primary
-  > format fs=NTFS label="BOOT" quick
+ 
+ wpeutil initializenetwork
  netsh int ipv4 set address Name=Ethernet0 static 192.168.100.12 255.255.255.0 
- pushd \\dc1\e$
+ net use \\dc1\e$ /user:fanco\administrator
  wbadmin get versions -backuptarget:\\dc1\e$
- wbadmin start sysrecovery -version:[guid] -machine MS1 -recoverytarget:C:\ -restoreAllVolumes -recreateDisks
+ wbadmin start sysrecovery -backuptarget:\\dc1\e$ -version:[id] -machine MS1 -restoreAllVolumes -recreateDisks
+
+
+
+# ========================================================== #
+# VM Replication
 
 <#
  # Replication... 
@@ -107,32 +137,39 @@ Set-VMMemory -vmname MS1 -DynamicMemoryEnabled:$True -MaximumBytes 1GB
  # Every time, man. Every time. 
  #>
 
- # enable replication at both ends, as follows
-Enable-VMReplication * hv2.fanco.com 80 kerberos
-set-vmreplicationserver -ReplicationEnabled:$true -AllowedAuthenticationType Kerberos -ReplicationAllowedFromAnyServer:$false 
+# enable replication at both ends, as follows
+ # SERVER1
+Set-VMReplicationServer -ReplicationEnabled:$true -AllowedAuthenticationType Kerberos -ReplicationAllowedFromAnyServer:$false 
 New-VMReplicationAuthorizationEntry hv2.fanco.com -ReplicaStorageLocation E:\ -TrustGroup fanco_com
+ # SERVER2
+Set-VMReplicationServer -ReplicationEnabled:$true -AllowedAuthenticationType Kerberos -ReplicationAllowedFromAnyServer:$false 
+New-VMReplicationAuthorizationEntry hv1.fanco.com -ReplicaStorageLocation E:\ -TrustGroup fanco_com
+
+ # Enable Replication on VM: 
+Enable-VMReplication * hv2.fanco.com 80 kerberos
 set-vmreplication -VMName MS1-Core -ReplicationFrequencySec 30 
 
+ # Start initial D... No, initial replication!
 Get-VM | Start-VMInitialReplication 
 
-# Failover 
-Get-VM | Stop-VM
-
 # move to replica server...
-Start-VMFailover ms1-core -Prepare
-Start-VMFailover -VMName MS1-core -ComputerName hv2
-set-vmreplication -reverse -vmname ms1-core -ComputerName HV2
-Start-VM -name ms1-core -ComputerName hv2
+Get-VM -ComputerName HV1 | Stop-VM -ComputerName HV1
+Start-VMFailover ms1 -Prepare
+Start-VMFailover -VMName MS1 -ComputerName hv2
+set-vmreplication -reverse -vmname ms1 -ComputerName HV2 
+Start-VM -name ms1 -ComputerName hv2
 
 # move back to primary server...
-Start-VMFailover ms1-core -Prepare
-Start-VMFailover -vmname ms1-core -computername hv1
-Set-VMReplication -reverse -vmname ms1-core -computername hv1
-start-vm -name ms1-core -computername hv1
+Get-VM -ComputerName HV2 | Stop-VM -ComputerName HV2
+Start-VMFailover ms1 -Prepare
+Start-VMFailover -vmname ms1 -computername hv1
+Set-VMReplication -reverse -vmname ms1 -computername hv1
+start-vm -name ms1 -computername hv1
 
 # show commands
 Get-VMReplication | fl name,primaryserver,replicaserver,authtype,ReplicaPort,ReplicationFrequencySec
-Get-VM | fl VMname,ReplicationState,ReplicationHealth
+Get-VM -ComputerName HV1 | fl VMname,state,ReplicationState,ReplicationHealth
+Get-VM -ComputerName HV2 | fl VMname,state,ReplicationState,ReplicationHealth
 
 # ================================================================#
 # failover networking
@@ -150,6 +187,39 @@ Set-VMNetworkAdapterFailoverConfiguration -VMName MS1-Core -ComputerName HV2 `
 # Show commands
 Get-VMNetworkAdapterFailoverConfiguration -ComputerName HV1 -VMName MS1-Core
 Get-VMNetworkAdapterFailoverConfiguration -ComputerName HV2 -VMName MS1-Core
+
+# ================================================================#
+# DNS and DHCP config
+
+# on DNS server situated on NAT network, routing to internal network: 
+route add 192.168.0.0 mask 255.255.0.0 200.0.0.250
+
+# MS2
+get-windowsfeature dhcp,dns | Install-WindowsFeature -IncludeManagementTools
+
+net stop DHCPserver
+net stop DNSserver
+net start DHCPserver
+net start DNSserver
+
+# Enable cachelocking
+dnscmd /config /CacheLockingPercent 100
+# Disable cachelocking 
+dnscmd /config /CacheLockingPercent 0
+
+#=============+++++======================+#
+# IPAM
+Invoke-IpamGpoProvisioning -Domain fanco.com -GpoPrefixName IPAM1 -IpamServerFqdn ipam.fanco.com
+
+Invoke-IpamServerProvisioning -GpoPrefix IPAM1 -ProvisioningMethod Automatic 
+
+# Configer in server manager
+# select servers
+ # Unmanaged > managed
+# Unblock --wtf???
+# Firewalls disabled on both servers (PS)
+# Make GPO to allow it
+# Unblock somehow. may take some time. 
 
 # ======================================== #
 # Extra Goodies #
