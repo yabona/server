@@ -4,6 +4,7 @@ Shift+F10
  > wmic useraccount where name="Administrator" rename LocalAdmin 
  > net user LocalAdmin /active:yes
  > net user LocalAdmin * 
+ > wmic comptuersystem where name="%COMPUTERNAME%" rename "$newname"
 # done.
 
 Get-Netadapter Ethernet* | Rename-Netadapter -NewName PROD
@@ -29,6 +30,9 @@ Install-ADDSForest -CreateDNSDelegation:$false -DomainName "fanco.com" `
     -SafeModeAdministratorPassword ((Get-Credential).Password) -Force:$true
 
 # Child-domain
+Install-ADDSDomain -CreateDnsDelegation -installDNS -DomainMode Win2012R2 `
+    -NewDomainName "Staff" -ParentDomainName "fanco.com" `
+    -SafeModeAdministratorPassword ("Windows1" | ConvertTo-SecureString -AsPlainText -Force) 
 
 # ====================================================================== #
 # router configuration
@@ -37,6 +41,7 @@ Get-NetAdapter | Set-NetIpInterface -Forwarding Enabled
 
 # NAT config
 Install-RemoteAccess -VpnType Vpn
+NETSH routing ip nat install
 NETSH routing ip nat add interface EXT-NAT
 NETSH routing ip nat set interface EXT-NAT mode=full
 NETSH routing ip nat add interface PROD mode=private
@@ -88,20 +93,6 @@ wbadmin start backup -backuptarget:\\dc1\e$ -AllCritical
 Stop-Computer -force
 
 
-# ======================================================================== #
-# DHCP Config...
-
-# create dhcp scope on DC...
-Add-DhcpServerv4Scope -StartRange 192.168.100.50 -EndRange 192.168.100.100 -SubnetMask 255.255.255.0 -Name DHCP
-Set-DhcpServerv4OptionValue -OptionId 003 -ScopeId 192.168.100.0 -Value 192.168.100.254 
-Set-DhcpServerv4OptionValue -OptionId 006 -ScopeId 192.168.100.0 -Value 192.168.100.10
-Set-DhcpServerv4OptionValue -optionid 0015 -ScopeId 192.168.100.0 -Value "fanco.com"
-
-# Set policy on DHCP server
-
-# client side settings
-ipconfig /setclassid PROD "FastInternet"
-
 # ======================================== #
 # configure virtualization
 Install-WindowsFeature Hyper-V -IncludeManagementTools
@@ -138,6 +129,7 @@ Set-VMMemory -vmname MS1 -DynamicMemoryEnabled:$True -MaximumBytes 1GB
  #>
 
 # enable replication at both ends, as follows
+# Make sure it uses FQDNs, it will not work otherwise. 
  # SERVER1
 Set-VMReplicationServer -ReplicationEnabled:$true -AllowedAuthenticationType Kerberos -ReplicationAllowedFromAnyServer:$false 
 New-VMReplicationAuthorizationEntry hv2.fanco.com -ReplicaStorageLocation E:\ -TrustGroup fanco_com
@@ -198,20 +190,54 @@ route add 192.168.0.0 mask 255.255.0.0 200.0.0.250
 get-windowsfeature dhcp,dns | Install-WindowsFeature -IncludeManagementTools
 
 net stop DHCPserver
-net stop DNSserver
+net stop DNSs
 net start DHCPserver
-net start DNSserver
+net start DNS
 
 # Enable cachelocking
 dnscmd /config /CacheLockingPercent 100
 # Disable cachelocking 
 dnscmd /config /CacheLockingPercent 0
 
+dnscmd /clearCache
+
+dnscmd /zoneUpdateFromDS
+dnscmd /statistics
+
+Set-DnsServerForwarder -IPAddress 208.67.222.222
+
+###########################
+# DHCP
+# create dhcp scope on DC...
+Add-DhcpServerv4Scope -StartRange 192.168.100.50 -EndRange 192.168.100.100 -SubnetMask 255.255.255.0 -Name DHCP
+Set-DhcpServerv4OptionValue -OptionId 003 -ScopeId 192.168.100.0 -Value 192.168.100.254 
+Set-DhcpServerv4OptionValue -OptionId 006 -ScopeId 192.168.100.0 -Value 192.168.100.10
+Set-DhcpServerv4OptionValue -optionid 0015 -ScopeId 192.168.100.0 -Value "fanco.com"
+
+# Set policy on DHCP server
+    <# 
+     # R.Clk IPv4 and define user options 
+     # set title
+     # In ASCII define value assigned to client
+    #>
+
+# client side settings
+ipconfig /setclassid PROD "FastInternet"
+
+ipconfig /showclassid PROD
+
 #=============+++++======================+#
 # IPAM
 Invoke-IpamGpoProvisioning -Domain fanco.com -GpoPrefixName IPAM1 -IpamServerFqdn ipam.fanco.com
 
 Invoke-IpamServerProvisioning -GpoPrefix IPAM1 -ProvisioningMethod Automatic 
+
+Add-IpamDiscoveryDomain -Name noah.local -PassThru 
+
+Add-IpamServerInventory -Name BAILEY-DHCP -ServerType DHCP -ManageabilityStatus Managed
+Add-IpamServerInventory -name BAILEY-DC1 -ServerType DHCP,DNS -ManageabilityStatus Managed 
+
+
 
 # Configer in server manager
 # select servers
@@ -221,6 +247,30 @@ Invoke-IpamServerProvisioning -GpoPrefix IPAM1 -ProvisioningMethod Automatic
 # Make GPO to allow it
 # Unblock somehow. may take some time. 
 
+# turn all the firewalls off
+# make for god damn sure that the DC is "domainAuth"
+Get-NetConnectionProfile
+
+# Add the IPAM server to the Administrators group
+
+# update: all the servers have netconnection profiles of "Public"
+Set-NetConnectionProfile -NetworkCategory DomainAuthenticated -InterfaceAlias PROD
+ # This doesn't work for some ungodly reason!
+net stop nlasvc
+net start nlasvc
+
+sc query dhcp
+net stop dhcp
+net start dhcp
+
+# =========================================== #
+dssite.msc # configure sites 
+domain.msc # configure upn suffix
+
+Get-ADuser -Filter {Name -like "Thicc Boi"} -Properties UserPrincipalName
+
+whoami /upn
+
 # ======================================== #
 # Extra Goodies #
 
@@ -229,4 +279,3 @@ Get-ADComputer -filter *|%{Invoke-GPUpdate -Computer $_.dnshostname -Force -AsJo
 $serverList = (Get-ADComputer -filter {name -notlike "*DC*"} ).dnsHostName
 foreach ($i in $serverList) { Stop-Computer -ComputerName $i -AsJob -force } 
 Get-Job | Wait-Job ; Stop-Computer
-
