@@ -39,14 +39,11 @@ Install-ADDSDomain -CreateDnsDelegation -installDNS -DomainMode Win2012R2 `
 Install-WindowsFeature Routing -IncludeManagementTools
 Get-NetAdapter | Set-NetIpInterface -Forwarding Enabled 
 
-# NAT config
-Install-RemoteAccess -VpnType Vpn
-NETSH routing ip nat install
-NETSH routing ip nat add interface EXT-NAT
-NETSH routing ip nat set interface EXT-NAT mode=full
-NETSH routing ip nat add interface PROD mode=private
-#Show command: 
-NETSH routing ip nat dump
+Set-NetFirewallProfile -all -Enabled False
+
+New-NetNat -name EXT-NAT -ExternalIPInterfaceAddressPrefix 200.0.0.250/24
+Add-NetNatExternalAddress -NatName EXT-NAT -IPAddress 200.0.0.250 
+
 
 
 # ====================================================================== #
@@ -84,6 +81,7 @@ iscsicpl.exe
 # On memberserver
 Install-WindowsFeature Windows-server-backup -IncludeManagementTools
 
+# shrink virtual disk to make backup faster...
 diskpart 
  > sel vol []
  > shrink querymax 
@@ -97,14 +95,18 @@ Stop-Computer -force
 # configure virtualization
 Install-WindowsFeature Hyper-V -IncludeManagementTools
 
-New-VMSwitch -Name ext_PROD -AllowManagementOS:$true -NetAdapterName PROD 
+# configure virtual networks on both machines: 
+New-VMSwitch -Name EXT-PROD -AllowManagementOS:$true -NetAdapterName PROD -ComputerName HV1
+New-VMSwitch -name EXT-REMOTE -AllowManagementOS:$true -NetAdapterName REMOTE -ComputerName HV2
+
+# Create VHDX and VM with dynamic memory: 
 New-Vhd -dynamic -path X:\Hyper-V\MS1.vhdx -SizeBytes 20GB
-New-VM -name MS1 -generation 1 -memoryStartupBytes 512MB -switchname ext_PROD `
+New-VM -name MS1 -generation 1 -memoryStartupBytes 1024MB -switchname ext_PROD `
     -path x:\Hyper-v\ -vhdpath X:\hyper-v\ms1.vhdx
 Set-VMMemory -vmname MS1 -DynamicMemoryEnabled:$True -MaximumBytes 1GB
 
 # ========================================= #
-# recovery (read up on this)
+# RESTORE PROCESS: BOOT INTO WPE (DVD): 
 
  # shift + f10
  diskpart 
@@ -116,17 +118,13 @@ Set-VMMemory -vmname MS1 -DynamicMemoryEnabled:$True -MaximumBytes 1GB
  net use \\dc1\e$ /user:fanco\administrator
  wbadmin get versions -backuptarget:\\dc1\e$
  wbadmin start sysrecovery -backuptarget:\\dc1\e$ -version:[id] -machine MS1 -restoreAllVolumes -recreateDisks
+ # when done...
+ wpeutil reboot
 
-
+ gwmi win32_baseboard | fl caption,Manufacturer,Product
 
 # ========================================================== #
 # VM Replication
-
-<#
- # Replication... 
- # Make for damn sure that the SAN at both ends is not write-protected...
- # Every time, man. Every time. 
- #>
 
 # enable replication at both ends, as follows
 # Make sure it uses FQDNs, it will not work otherwise. 
@@ -137,12 +135,16 @@ New-VMReplicationAuthorizationEntry hv2.fanco.com -ReplicaStorageLocation E:\ -T
 Set-VMReplicationServer -ReplicationEnabled:$true -AllowedAuthenticationType Kerberos -ReplicationAllowedFromAnyServer:$false 
 New-VMReplicationAuthorizationEntry hv1.fanco.com -ReplicaStorageLocation E:\ -TrustGroup fanco_com
 
+# BOTH SERVERS: open port 80 (not best way to do it but fuccccit)
+New-NetFirewallRule -name VMREPLICATION -Direction Inbound -LocalPort 80 -Protocol tcp -Action Allow 
+
  # Enable Replication on VM: 
 Enable-VMReplication * hv2.fanco.com 80 kerberos
 set-vmreplication -VMName MS1-Core -ReplicationFrequencySec 30 
 
  # Start initial D... No, initial replication!
 Get-VM | Start-VMInitialReplication 
+Get-VMReplication 
 
 # move to replica server...
 Get-VM -ComputerName HV1 | Stop-VM -ComputerName HV1
@@ -165,20 +167,21 @@ Get-VM -ComputerName HV2 | fl VMname,state,ReplicationState,ReplicationHealth
 
 # ================================================================#
 # failover networking
-Enable-VMIntegrationService -vmname MS1-Core -Name 'Guest Service Interface' -ComputerName HV1
-Enable-VMIntegrationService -vmname MS1-Core -Name 'Guest Service Interface' -ComputerName HV2
+# caps matter here... 
+Enable-VMIntegrationService -vmname MS1 -Name 'Guest Service Interface' -ComputerName HV1
+Enable-VMIntegrationService -vmname MS1 -Name 'Guest Service Interface' -ComputerName HV2
 
-Set-VMNetworkAdapterFailoverConfiguration -VMName MS1-Core -ComputerName HV1 `
+Set-VMNetworkAdapterFailoverConfiguration -VMName MS1 -ComputerName HV1 `
     -IPv4Address 192.168.100.50 -IPv4SubnetMask 255.255.255.0  `
     -IPv4PreferredDNSServer 192.168.100.10 -IPv4DefaultGateway 192.168.100.254
 
-Set-VMNetworkAdapterFailoverConfiguration -VMName MS1-Core -ComputerName HV2 `
+Set-VMNetworkAdapterFailoverConfiguration -VMName MS1 -ComputerName HV2 `
     -IPv4Address 192.168.200.50 -IPv4SubnetMask 255.255.255.0 `
     -IPv4PreferredDNSServer 192.168.100.10 -IPv4DefaultGateway 192.168.200.254
 
 # Show commands
-Get-VMNetworkAdapterFailoverConfiguration -ComputerName HV1 -VMName MS1-Core
-Get-VMNetworkAdapterFailoverConfiguration -ComputerName HV2 -VMName MS1-Core
+Get-VMNetworkAdapterFailoverConfiguration -ComputerName HV1 -VMName MS1
+Get-VMNetworkAdapterFailoverConfiguration -ComputerName HV2 -VMName MS1
 
 # ================================================================#
 # DNS and DHCP config
@@ -214,6 +217,11 @@ Set-DhcpServerv4OptionValue -OptionId 003 -ScopeId 192.168.100.0 -Value 192.168.
 Set-DhcpServerv4OptionValue -OptionId 006 -ScopeId 192.168.100.0 -Value 192.168.100.10
 Set-DhcpServerv4OptionValue -optionid 0015 -ScopeId 192.168.100.0 -Value "fanco.com"
 
+
+Add-DhcpServerv4Failover -Name "dc1-dhcp" -ScopeId 192.168.100.0 `
+     -PartnerServer dhcp.okay.local -ComputerName dc1.okay.local -AutoStateTransition:$true -ReservePercent 10 
+
+
 # Set policy on DHCP server
     <# 
      # R.Clk IPv4 and define user options 
@@ -231,31 +239,26 @@ ipconfig /showclassid PROD
 Invoke-IpamGpoProvisioning -Domain fanco.com -GpoPrefixName IPAM1 -IpamServerFqdn ipam.fanco.com
 
 Invoke-IpamServerProvisioning -GpoPrefix IPAM1 -ProvisioningMethod Automatic 
+# edit security filtering on IPAM GPO
+# update GP on relevant servers...
 
-Add-IpamDiscoveryDomain -Name noah.local -PassThru 
+Add-IpamDiscoveryDomain -Name noah.local -DiscoverDc:$true -DiscoverDns:$true -DiscoverDhcp:$true
 
 Add-IpamServerInventory -Name BAILEY-DHCP -ServerType DHCP -ManageabilityStatus Managed
 Add-IpamServerInventory -name BAILEY-DC1 -ServerType DHCP,DNS -ManageabilityStatus Managed 
 
-
-
-# Configer in server manager
-# select servers
- # Unmanaged > managed
-# Unblock --wtf???
-# Firewalls disabled on both servers (PS)
-# Make GPO to allow it
-# Unblock somehow. may take some time. 
+Set-IpamServerInventory -Name DHCP -ServerType DHCP -ManageabilityStatus Managed 
 
 # turn all the firewalls off
 # make for god damn sure that the DC is "domainAuth"
 Get-NetConnectionProfile
 
 # Add the IPAM server to the Administrators group
+net group "Domain Admins" IPAM$ /ADD /DOMAIN 
 
-# update: all the servers have netconnection profiles of "Public"
+# set netadapter to DA, rather than public... 
 Set-NetConnectionProfile -NetworkCategory DomainAuthenticated -InterfaceAlias PROD
- # This doesn't work for some ungodly reason!
+
 net stop nlasvc
 net start nlasvc
 
@@ -263,9 +266,17 @@ sc query dhcp
 net stop dhcp
 net start dhcp
 
+# SHOW COMMAND: MONEYSHOT BBY
+Get-IpamServerInventory | fl Name,IPAMAccessStatus,ServerType,ManageabilityStatus,ServerStatus
+
 # =========================================== #
 dssite.msc # configure sites 
 domain.msc # configure upn suffix
+
+Get-ADforest -Identity yabone.zone | Set-ADForest -UPNSuffixes @{replace="domainItotallyOwn.com"}
+
+New-ADUser -Name "thiccboi" -UserPrincipalName "thiccboi@ofohnothatwasbonehurtingjuice.net" -enabled:$true `
+     -AccountPassword ("Windows1" | ConvertTo-SecureString -AsPlainText -Force)
 
 Get-ADuser -Filter {Name -like "Thicc Boi"} -Properties UserPrincipalName
 
@@ -279,3 +290,15 @@ Get-ADComputer -filter *|%{Invoke-GPUpdate -Computer $_.dnshostname -Force -AsJo
 $serverList = (Get-ADComputer -filter {name -notlike "*DC*"} ).dnsHostName
 foreach ($i in $serverList) { Stop-Computer -ComputerName $i -AsJob -force } 
 Get-Job | Wait-Job ; Stop-Computer
+
+# speedups: bulk install scripts: 
+
+$dhcpservers = @("DC1","DHCP")
+foreach ($i in $dhcpservers) {
+    Install-WindowsFeature DHCP -IncludeManagementTools -ComputerName $i
+}
+
+$hypervisors = @("HV1","HV2")
+foreach ($i in $hypervisors) {
+    Install-WindowsFeature Hyper-V -IncludeManagementTools -ComputerName $i -Restart
+}
