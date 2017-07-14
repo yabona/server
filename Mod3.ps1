@@ -49,3 +49,27 @@ Install-ADDSDomain -CreateDnsDelegation -installDNS -DomainMode Win2012R2 `
     -SafeModeAdministratorPassword ("Windows1" | ConvertTo-SecureString -AsPlainText -Force) 
 
 
+# ===================================================================== #
+# DNS config
+
+# on router: 
+Add-DnsServerConditionalForwarderZone -Name acme.local -MasterServers 10.100.100.10 
+Add-DnsServerConditionalForwarderZone -Name east.fanco.local -MasterServers 192.168.101.11
+Add-DnsServerConditionalForwarderZone -Name west.fanco.local -MasterServers 192.168.102.10
+Add-DnsServerConditionalForwarderZone -name fanco.local -MasterServers 192.168.101.10,192.168.100.10
+
+# on each DC: 
+ # set DNS forwarder to router interface: 
+Set-DnsServerForwarder ((Get-NetIPConfiguration).IPv4defaultgateway.nexthop)
+
+
+# ====================================================================== #
+# AD Forest trusts
+
+
+
+# ======================================================================= # 
+# client side evidence
+whoami /upn
+(gwmi win32_computersystem).domain
+wmic computersystem get domain,name
