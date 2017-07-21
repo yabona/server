@@ -66,6 +66,14 @@ Set-DnsServerForwarder ((Get-NetIPConfiguration).IPv4defaultgateway.nexthop)
 # ====================================================================== #
 # AD Forest trusts
 
+# literally everything
+domain.msc
+
+# show trusts
+Get-ADTrust -filter * | ft Name,Direction,Target,forestTransitive -AutoSize
+
+# show site links
+Get-ADReplicationSiteLink -filter * | ft Name,ReplicationFrequencyInMinutes,Cost -AutoSize
 
 
 # ======================================================================= # 
@@ -73,3 +81,4 @@ Set-DnsServerForwarder ((Get-NetIPConfiguration).IPv4defaultgateway.nexthop)
 whoami /upn
 (gwmi win32_computersystem).domain
 wmic computersystem get domain,name
+
