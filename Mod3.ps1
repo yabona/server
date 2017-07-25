@@ -82,3 +82,6 @@ whoami /upn
 (gwmi win32_computersystem).domain
 wmic computersystem get domain,name
 
+# ======================================================================= #
+# ADCS configuration
+Install-WindowsFeature ad-certificate -IncludeManagementTools -Restart

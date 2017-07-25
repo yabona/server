@@ -23,3 +23,4 @@ Get-job | Remove-Job
 repadmin /replsummary 
 Write-verbose "Finished refreshing GP settings!" -Verbose
 Write-Verbose "Finished replicating all DCs! " -Verbose
+
