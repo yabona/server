@@ -81,7 +81,16 @@ Get-ADReplicationSiteLink -filter * | ft Name,ReplicationFrequencyInMinutes,Cost
 whoami /upn
 (gwmi win32_computersystem).domain
 wmic computersystem get domain,name
+gwmi win32_ntdomain
 
 # ======================================================================= #
 # ADCS configuration
 Install-WindowsFeature ad-certificate -IncludeManagementTools -Restart
+
+# ======================================================================  #
+
+Install-WindowsFeature ADFS-Federation -IncludeManagementTools -Restart
+
+# ======================================================================= #
+
+Install-WindowsFeature ADRMS -IncludeManagementTools -Restart
