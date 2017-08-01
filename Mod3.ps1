@@ -126,6 +126,12 @@ ocsp.msc
 
 Install-WindowsFeature ADFS-Federation -IncludeManagementTools -Restart
 
+<# post config and setup...#>
+
+# install WIDF and stuff: 
+
+Install-WindowsFeature 
+
 # ======================================================================= #
 
 Install-WindowsFeature ADRMS -IncludeManagementTools -Restart
@@ -139,6 +145,10 @@ Install-AdfsFarm `
 
 setspn -s http/federation.fanco.local fanco\da 
 setspn -s http/fanco-fs.fanco.local fanco\da 
+
+
+Install-WindowsFeature windows-identity-foundation,Net-framework-features,net-framework-core `
+    -Source D:\sources\sxs
 
 "C:\Program Files (x86)\Windows Identity Foundation SDK\v4.0\Samples\Quick Start\Using Managed STS\ClaimsAwareWebAppWithManagedSTS"
 
@@ -157,3 +167,26 @@ certutil -addstore root C:\fanco_ca.cer
 # make a public folder
 
 icacls /grant:r S-1-5-11:(CI)(OI)(M)
+
+
+
+ # ============================================================================= #
+
+ <#
+
+ where im at: 
+
+ ADFS 
+ creating the website for ClaimsAwareWebAppWithManagedSTS bullshit kikery
+ issues with: 
+    distributing the truted root CA to MS's
+    what the fuck seriously
+ have done: 
+    export from certmgr to shared folder, import on other domain
+    export from cmdline, import with certmgr
+
+
+
+
+
+ #>
