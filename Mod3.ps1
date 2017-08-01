@@ -71,10 +71,13 @@ domain.msc
 
 # show trusts
 Get-ADTrust -filter * | ft Name,Direction,Target,forestTransitive -AutoSize
+Get-ADTrust -filter * | fl Direction,Distinguishedname,ForestTransitive,Name,ObjectClass,Source,Target
 
 # show site links
 Get-ADReplicationSiteLink -filter * | ft Name,ReplicationFrequencyInMinutes,Cost -AutoSize
 
+# Don't delete DFSN (default-first-site-name)
+# bad things happen. Really. 
 
 # ======================================================================= # 
 # client side evidence
@@ -85,7 +88,39 @@ gwmi win32_ntdomain
 
 # ======================================================================= #
 # ADCS configuration
-Install-WindowsFeature ad-certificate -IncludeManagementTools -Restart
+
+Get-WindowsFeature ADCS* | Install-WindowsFeature -IncludeManagementTools -Restart
+
+Install-AdcsCertificationAuthority -CAType EnterpriseRootCA
+
+# ADCS CA management
+certsrv.msc
+
+# Machine certs
+certmgr.msc
+
+# OCSP 
+ocsp.msc
+
+<#
+    server manager post configuration
+    cersrv > CA1 > properties
+    extensions > AIA
+    Add
+        http://<CaName>/ocsp
+    Check both boxes: include AIA and the other one
+
+    certsrv: templates > manage
+    OCSP > security > add Auth Users:(enroll,AutoEnroll)
+
+    Templates > new template to issue
+     OCSP > add
+
+    Ocsp.msc
+    revocation > add
+    Nexty next next
+
+#>
 
 # ======================================================================  #
 
@@ -94,3 +129,31 @@ Install-WindowsFeature ADFS-Federation -IncludeManagementTools -Restart
 # ======================================================================= #
 
 Install-WindowsFeature ADRMS -IncludeManagementTools -Restart
+
+
+Install-AdfsFarm `
+-CertificateThumbprint:"5151E727422AA744B7EE15EED49EE8467511C2B6" `
+-FederationServiceDisplayName:"Fanco Org" `
+-FederationServiceName:"federation.fanco.local" `
+-ServiceAccountCredential:$serviceAccountCredential
+
+setspn -s http/federation.fanco.local fanco\da 
+setspn -s http/fanco-fs.fanco.local fanco\da 
+
+"C:\Program Files (x86)\Windows Identity Foundation SDK\v4.0\Samples\Quick Start\Using Managed STS\ClaimsAwareWebAppWithManagedSTS"
+
+https://acme-web.acme.local/ClaimsAwareWebAppWithManagedSTS/
+
+# ========================================================================== # 
+
+# export ca cert
+certutil -ca.cert C:\fanco_ca.cer 
+
+# import root ca cert 
+certutil -addstore root C:\fanco_ca.cer 
+
+
+# =========================================================================== # 
+# make a public folder
+
+icacls /grant:r S-1-5-11:(CI)(OI)(M)
