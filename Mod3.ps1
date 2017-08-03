@@ -104,6 +104,7 @@ ocsp.msc
 
 <#
     server manager post configuration
+    
     cersrv > CA1 > properties
     extensions > AIA
     Add
@@ -121,6 +122,8 @@ ocsp.msc
     Nexty next next
 
 #>
+
+
 
 # ======================================================================  #
 
@@ -147,7 +150,10 @@ setspn -s http/federation.fanco.local fanco\da
 setspn -s http/fanco-fs.fanco.local fanco\da 
 
 
-Install-WindowsFeature windows-identity-foundation,Net-framework-features,net-framework-core `
+Install-WindowsFeature windows-identity-foundation,`
+    Net-framework-features,`
+    net-framework-core,`
+    NET-Framework-45-ASPNET `
     -Source D:\sources\sxs
 
 "C:\Program Files (x86)\Windows Identity Foundation SDK\v4.0\Samples\Quick Start\Using Managed STS\ClaimsAwareWebAppWithManagedSTS"
@@ -160,7 +166,7 @@ https://acme-web.acme.local/ClaimsAwareWebAppWithManagedSTS/
 certutil -ca.cert C:\fanco_ca.cer 
 
 # import root ca cert 
-certutil -addstore root C:\fanco_ca.cer 
+ certutil –f –dspublish “Z:\file.cer” RootCA
 
 
 # =========================================================================== # 
@@ -177,10 +183,11 @@ icacls /grant:r S-1-5-11:(CI)(OI)(M)
  where im at: 
 
  ADFS 
- creating the website for ClaimsAwareWebAppWithManagedSTS bullshit kikery
- issues with: 
+ creating the website for ClaimsAwareWebAppWithManagedSTS 
+
     distributing the truted root CA to MS's
     what the fuck seriously
+    > DID IT. See above. 
  have done: 
     export from certmgr to shared folder, import on other domain
     export from cmdline, import with certmgr
