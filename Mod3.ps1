@@ -48,6 +48,14 @@ Install-ADDSDomain -CreateDnsDelegation -installDNS -DomainMode Win2012R2 `
     -NewDomainName "Staff" -ParentDomainName "fanco.com" `
     -SafeModeAdministratorPassword ("Windows1" | ConvertTo-SecureString -AsPlainText -Force) 
 
+# ===================================================================== #
+# REPLICATION
+
+repadmin /replicate staff-dc1 bailey-dc1 cn=schema,cn=configuration,dc=bailey,dc=local
+
+repadmin /kcc
+
+repadmin /syncall /APedq 
 
 # ===================================================================== #
 # DNS config
