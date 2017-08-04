@@ -49,13 +49,59 @@ Install-ADDSDomain -CreateDnsDelegation -installDNS -DomainMode Win2012R2 `
     -SafeModeAdministratorPassword ("Windows1" | ConvertTo-SecureString -AsPlainText -Force) 
 
 # ===================================================================== #
-# REPLICATION
+# REPLICATION - pg340
 
 repadmin /replicate staff-dc1 bailey-dc1 cn=schema,cn=configuration,dc=bailey,dc=local
 
 repadmin /kcc
 
 repadmin /syncall /APedq 
+
+# ===================================================================== #
+# Sites, Subnets, Site Links
+
+New-ADReplicationSite -Name SouthEast 
+
+New-ADReplicationSiteLink -Name SouthEast-SouthWest -Cost 50 -ReplicationFrequencyInMinutes 120 
+
+New-ADReplicationSiteLinkBridge -Name SouthEast-NorthWest -SiteLinksIncluded "SouthEast-SouthWest","SouthWest-NorthWest" -InterSiteTransportProtocol IP 
+
+New-AdReplicationSubnet -name "192.168.100.0/24" -Site SouthEast 
+
+# SHOW
+Get-ADReplicationSubnet -filter * | ft Name
+Get-ADReplicationSiteLink -filter * | ft Name,ReplicationFrequencyInMinutes,Cost -AutoSize
+Get-ADReplicationSiteLinkBridge -filter * | ft Name,SiteLinksIncluded -AutoSize
+
+# this is why i drink. 
+# yak shaving. Come back to this when you're dry and spry
+(get-help Get-ADReplicationSubnet).syntax.SyntaxItem.Parameter.Name
+
+Get-ADDomainController $dcName | Move-ADDirectoryServer -Site $siteName 
+
+# ====================================================================== #
+# AD Forest/External trusts
+
+# literally everything
+domain.msc
+
+netdom trust TrustingDomain.local /Domain:TrustedDomain.local /add /twoway
+netdom trust TrustingDomain.local /Domain:TrustedDomain.local /verify 
+
+# and if you fuck up: 
+netdom trust TrustingDomain.local /Domain:TrustedDomain.local /Remove
+
+# show trusts
+Get-ADTrust -filter * | ft Name,Direction,Target,forestTransitive -AutoSize
+Get-ADTrust -filter * | fl Direction,Distinguishedname,ForestTransitive,Name,ObjectClass,Source,Target
+ 
+
+# ======================================================================= # 
+# client side evidence
+whoami /upn
+(gwmi win32_computersystem).domain
+wmic computersystem get domain,name
+gwmi win32_ntdomain
 
 # ===================================================================== #
 # DNS config
@@ -69,30 +115,6 @@ Add-DnsServerConditionalForwarderZone -name fanco.local -MasterServers 192.168.1
 # on each DC: 
  # set DNS forwarder to router interface: 
 Set-DnsServerForwarder ((Get-NetIPConfiguration).IPv4defaultgateway.nexthop)
-
-
-# ====================================================================== #
-# AD Forest trusts
-
-# literally everything
-domain.msc
-
-# show trusts
-Get-ADTrust -filter * | ft Name,Direction,Target,forestTransitive -AutoSize
-Get-ADTrust -filter * | fl Direction,Distinguishedname,ForestTransitive,Name,ObjectClass,Source,Target
-
-# show site links
-Get-ADReplicationSiteLink -filter * | ft Name,ReplicationFrequencyInMinutes,Cost -AutoSize
-
-# Don't delete DFSN (default-first-site-name)
-# bad things happen. Really. 
-
-# ======================================================================= # 
-# client side evidence
-whoami /upn
-(gwmi win32_computersystem).domain
-wmic computersystem get domain,name
-gwmi win32_ntdomain
 
 # ======================================================================= #
 # ADCS configuration
@@ -134,14 +156,27 @@ ocsp.msc
 
 
 # ======================================================================  #
+# ADFS Config
+
 
 Install-WindowsFeature ADFS-Federation -IncludeManagementTools -Restart
 
 <# post config and setup...#>
+# pg. 366 for Psh 
 
-# install WIDF and stuff: 
+Add-ADFSClaimsProviderTrust
 
-Install-WindowsFeature 
+Add-ADFSRelyingPartyTrust
+
+Update-ADFSCertificate 
+
+
+setspn -s http/federation.fanco.local fanco\da 
+setspn -s http/fanco-fs.fanco.local fanco\da 
+
+"C:\Program Files (x86)\Windows Identity Foundation SDK\v4.0\Samples\Quick Start\Using Managed STS\ClaimsAwareWebAppWithManagedSTS"
+
+https://acme-web.acme.local/ClaimsAwareWebAppWithManagedSTS/
 
 # ======================================================================= #
 
@@ -154,19 +189,16 @@ Install-AdfsFarm `
 -FederationServiceName:"federation.fanco.local" `
 -ServiceAccountCredential:$serviceAccountCredential
 
-setspn -s http/federation.fanco.local fanco\da 
-setspn -s http/fanco-fs.fanco.local fanco\da 
+# create service account: 
+ADRMS-SVC
 
-
-Install-WindowsFeature windows-identity-foundation,`
-    Net-framework-features,`
-    net-framework-core,`
-    NET-Framework-45-ASPNET `
-    -Source D:\sources\sxs
-
-"C:\Program Files (x86)\Windows Identity Foundation SDK\v4.0\Samples\Quick Start\Using Managed STS\ClaimsAwareWebAppWithManagedSTS"
-
-https://acme-web.acme.local/ClaimsAwareWebAppWithManagedSTS/
+<#
+  Problem: user has not been authenticated
+  It means: CA is not configured correctly
+    OSCP is not configured properly?
+    check out pg.424 later when you're more sane
+    443 for verifiying SPNs are correct? 
+#>
 
 # ========================================================================== # 
 
@@ -180,7 +212,7 @@ certutil -ca.cert C:\fanco_ca.cer
 # =========================================================================== # 
 # make a public folder
 
-icacls /grant:r S-1-5-11:(CI)(OI)(M)
+icacls /grant:r *S-1-5-11:(CI)(OI)(M)
 
 
 
