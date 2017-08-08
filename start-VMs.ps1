@@ -1,0 +1,1 @@
+foreach($i in (gci).name){$i; vmrun start $i\$i.vmx}

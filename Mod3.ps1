@@ -30,6 +30,12 @@ Set-NetFirewallProfile -all -Enabled False
 New-NetNat -name EXT-NAT -ExternalIPInterfaceAddressPrefix 200.0.0.250/24
 Add-NetNatExternalAddress -NatName EXT-NAT -IPAddress 200.0.0.250 
 
+# DNS
+Add-DnsServerConditionalForwarderZone -Name acme.local -MasterServers 10.100.100.10 
+Add-DnsServerConditionalForwarderZone -Name east.fanco.local -MasterServers 192.168.101.11
+Add-DnsServerConditionalForwarderZone -Name west.fanco.local -MasterServers 192.168.102.10
+Add-DnsServerConditionalForwarderZone -name fanco.local -MasterServers 192.168.101.10,192.168.100.10
+
 
 # ====================================================================== #
 # DC
@@ -48,6 +54,9 @@ Install-ADDSDomain -CreateDnsDelegation -installDNS -DomainMode Win2012R2 `
     -NewDomainName "Staff" -ParentDomainName "fanco.com" `
     -SafeModeAdministratorPassword ("Windows1" | ConvertTo-SecureString -AsPlainText -Force) 
 
+# set DNS forwarder to Router... 
+Set-DnsServerForwarder ((Get-NetIPConfiguration).IPv4defaultgateway.nexthop)
+
 # ===================================================================== #
 # REPLICATION - pg340
 
@@ -58,26 +67,71 @@ repadmin /kcc
 repadmin /syncall /APedq 
 
 # ===================================================================== #
-# Sites, Subnets, Site Links
+# Sites
 
-New-ADReplicationSite -Name SouthEast 
+$sites = @("Site1","Site2","Site3","Site4")
+foreach ($i in $sites) {
+    New-ADReplicationSite -Name $i 
+}
 
-New-ADReplicationSiteLink -Name SouthEast-SouthWest -Cost 50 -ReplicationFrequencyInMinutes 120 
+# -------------------------------------------------------------------- #
+#site-links
+# hashtables wrapped in arrays. S1/S2 are the sites included in the link.
+# uhhhhhhh i dont think this is the right way to do this, but fuck it man
+$Site1_Site2 = @{Name = "Site1-Site2"; S1 = 'Site1'; S2 = 'Site2'; Cost = 50; Rep = 120} 
+$Site2_Site3 = @{Name = "Site2-Site3"; S1 = 'Site2'; S2 = 'Site3'; Cost = 100; Rep = 180}
+$sitelinks = $Site1_Site2,$Site2_Site3
 
-New-ADReplicationSiteLinkBridge -Name SouthEast-NorthWest -SiteLinksIncluded "SouthEast-SouthWest","SouthWest-NorthWest" -InterSiteTransportProtocol IP 
+#delet existing...
+Get-ADReplicationSiteLink -filter * | Remove-ADReplicationSiteLink -WhatIf
+pause; Get-ADReplicationSiteLink -filter * | Remove-ADReplicationSiteLink 
 
-New-AdReplicationSubnet -name "192.168.100.0/24" -Site SouthEast 
+#create them according to hashtables
+foreach ($i in 0..($sitelinks.Count -1) ) {
+    New-ADReplicationSiteLink -Name $sitelinks[$i].Name `
+        -Cost $sitelinks[$i].Cost `
+        -ReplicationFrequencyInMinutes $sitelinks[$i].Rep `
+        -SitesIncluded $sitelinks[$i].S1,$sitelinks[$i].S2
+}
 
-# SHOW
-Get-ADReplicationSubnet -filter * | ft Name
-Get-ADReplicationSiteLink -filter * | ft Name,ReplicationFrequencyInMinutes,Cost -AutoSize
-Get-ADReplicationSiteLinkBridge -filter * | ft Name,SiteLinksIncluded -AutoSize
+# -------------------------------------------------------------------- #
+#site-link bridges
+$Site1_Site3 = @{name = "Site1-Site3"; L1 = "Site1-Site2" ; L2 = "Site2-Site3"}
+$Site3_Site5 = @{name = "Site3-Site5"; L1 = "Site3-Site4" ; L2 = "Site4-Site5"}
+$SiteLinkBridges = $Site1_Site3,$Site3_Site5
 
-# this is why i drink. 
-# yak shaving. Come back to this when you're dry and spry
-(get-help Get-ADReplicationSubnet).syntax.SyntaxItem.Parameter.Name
+foreach ($i in 0..($SiteLinkBridges.Count -1) ) {
+    New-ADReplicationSiteLinkBridge -Name $siteLinkBridges[$i].Name `
+        -SiteLinksIncluded $siteLinkBridges[$i].L1,$siteLinkBridges[$i].L2 `
+        -InterSiteTransportProtocol IP 
+}
+
+# -------------------------------------------------------------------- #
+# Replication Subnets
+
+$Subnets = @{
+    Site1 = 101,102,103;
+    Site2 = 104,105,106; 
+    Site3 = 107,108,109
+}
+foreach ($i in $Subnets.Keys) {
+    foreach ($j in $subnets.$i) {
+        New-AdReplicationSubnet -name "172.16.$j.0/24" -Site $i
+    }
+}
+
+# -------------------------------------------------------------------- #
+# Move DCs and show results 
 
 Get-ADDomainController $dcName | Move-ADDirectoryServer -Site $siteName 
+
+# SHOW
+Get-ADReplicationSubnet -filter * | ft Name,Site
+get-adreplicationsiteLink -filter * | fl Name,Cost,ReplicationFrequencyInMinutes,SitesIncluded
+Get-ADReplicationSiteLinkBridge -filter * | ft Name,SiteLinksIncluded -AutoSize
+
+Gwmi win32_ntdomain
+Gwmi win32_
 
 # ====================================================================== #
 # AD Forest/External trusts
@@ -85,14 +139,15 @@ Get-ADDomainController $dcName | Move-ADDirectoryServer -Site $siteName
 # literally everything
 domain.msc
 
-netdom trust TrustingDomain.local /Domain:TrustedDomain.local /add /twoway
+# external trust. Netdom can't do forest/transitive trusts! WTF?
+netdom trust TrustingDomain.local /Domain:TrustedDomain.local /userD:trustedDomain\admin /add /twoway
+
 netdom trust TrustingDomain.local /Domain:TrustedDomain.local /verify 
 
 # and if you fuck up: 
 netdom trust TrustingDomain.local /Domain:TrustedDomain.local /Remove
 
 # show trusts
-Get-ADTrust -filter * | ft Name,Direction,Target,forestTransitive -AutoSize
 Get-ADTrust -filter * | fl Direction,Distinguishedname,ForestTransitive,Name,ObjectClass,Source,Target
  
 
@@ -107,14 +162,10 @@ gwmi win32_ntdomain
 # DNS config
 
 # on router: 
-Add-DnsServerConditionalForwarderZone -Name acme.local -MasterServers 10.100.100.10 
-Add-DnsServerConditionalForwarderZone -Name east.fanco.local -MasterServers 192.168.101.11
-Add-DnsServerConditionalForwarderZone -Name west.fanco.local -MasterServers 192.168.102.10
-Add-DnsServerConditionalForwarderZone -name fanco.local -MasterServers 192.168.101.10,192.168.100.10
 
 # on each DC: 
  # set DNS forwarder to router interface: 
-Set-DnsServerForwarder ((Get-NetIPConfiguration).IPv4defaultgateway.nexthop)
+
 
 # ======================================================================= #
 # ADCS configuration
