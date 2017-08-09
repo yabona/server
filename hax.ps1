@@ -24,13 +24,14 @@ wmic ntdomain get DomainControllerName,DomainName
 
 wmic volume get name,label,fileSystem,capacity
 wmic volume where name="D:\" dismount
+mountvol E:\ /p 
 
 # network stff
 net view \\ip-addr /all 
 net use \\ip-addr /user:comp\administrator *
 
 # domain fuggery
-klist purge && logoff 
+klist purge ; logoff 
 
 nltest --% /dsgetdc:<domain> [ /gc /kdc /pdc /force]
 
