@@ -60,7 +60,7 @@ Set-DnsServerForwarder ((Get-NetIPConfiguration).IPv4defaultgateway.nexthop)
 # ===================================================================== #
 # REPLICATION - pg340
 
-repadmin /replicate staff-dc1 bailey-dc1 cn=schema,cn=configuration,dc=bailey,dc=local
+repadmin /replicate dest-dc1 source-dc1 cn=schema,cn=configuration,dc=yabone,dc=zone
 
 repadmin /kcc
 
@@ -207,8 +207,16 @@ ocsp.msc
 # test: 
 certutil -pulse
 
+# ========================================================================== # 
 
-# ===================================snt ===================================  #
+# export ca cert
+certutil -ca.cert C:\fanco_ca.cer 
+
+# import root ca cert 
+ certutil –f –dspublish “Z:\file.cer” RootCA
+
+
+# =========================================================================  #
 # ADFS Config
 
 
@@ -261,13 +269,6 @@ ADRMS-SVC
     443 for verifiying SPNs are correct? 
 #>
 
-# ========================================================================== # 
-
-# export ca cert
-certutil -ca.cert C:\fanco_ca.cer 
-
-# import root ca cert 
- certutil –f –dspublish “Z:\file.cer” RootCA
 
 
 # =========================================================================== # 
