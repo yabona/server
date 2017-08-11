@@ -43,14 +43,14 @@ install-windowsfeature ad-domain-services
 
 # ForestRoot domain
 Install-ADDSForest -CreateDNSDelegation:$false -DomainName "fanco.com" `
-    -DomainMode "Win2012" -ForestMode "Win2012" -InstallDNS:$True `
-    -SafeModeAdministratorPassword ((Get-Credential).Password) -Force:$true
+    -DomainMode "Win2012" -ForestMode "Win2012" -InstallDNS:$True -Force:$true `
+    -SafeModeAdministratorPassword ("Windows1" | ConvertTo-SecureString -AsPlainText -Force)  
 
 # secondary DC
 Install-ADDSDomainController -DomainName fanco.local -WhatIf -InstallDns:$true
 
 # Child-domain
-Install-ADDSDomain -CreateDnsDelegation -installDNS -DomainMode Win2012R2 `
+Install-ADDSDomain -CreateDnsDelegation -InstallDNS:$True -Force:$true -DomainMode Win2012R2 `
     -NewDomainName "Staff" -ParentDomainName "fanco.com" `
     -SafeModeAdministratorPassword ("Windows1" | ConvertTo-SecureString -AsPlainText -Force) 
 
@@ -64,6 +64,7 @@ repadmin /replicate dest-dc1 source-dc1 cn=schema,cn=configuration,dc=yabone,dc=
 
 repadmin /kcc
 
+runas /user:domain\administrator "cmd"
 repadmin /syncall /APedq 
 
 # ===================================================================== #

