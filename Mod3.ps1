@@ -54,6 +54,7 @@ Install-ADDSDomain -CreateDnsDelegation -InstallDNS:$True -Force:$true -DomainMo
     -NewDomainName "Staff" -ParentDomainName "fanco.com" `
     -SafeModeAdministratorPassword ("Windows1" | ConvertTo-SecureString -AsPlainText -Force) 
 
+
 # set DNS forwarder to Router... 
 Set-DnsServerForwarder ((Get-NetIPConfiguration).IPv4defaultgateway.nexthop)
 
@@ -132,7 +133,6 @@ get-adreplicationsiteLink -filter * | fl Name,Cost,ReplicationFrequencyInMinutes
 Get-ADReplicationSiteLinkBridge -filter * | ft Name,SiteLinksIncluded -AutoSize
 
 Gwmi win32_ntdomain
-Gwmi win32_
 
 # ====================================================================== #
 # AD Forest/External trusts
@@ -159,15 +159,6 @@ whoami /upn
 wmic computersystem get domain,name
 gwmi win32_ntdomain
 
-# ===================================================================== #
-# DNS config
-
-# on router: 
-
-# on each DC: 
- # set DNS forwarder to router interface: 
-
-
 # ======================================================================= #
 # ADCS configuration
 
@@ -175,68 +166,134 @@ Get-WindowsFeature ADCS* | Install-WindowsFeature -IncludeManagementTools -Resta
 
 Install-AdcsCertificationAuthority -CAType EnterpriseRootCA
 
-# ADCS CA management
-certsrv.msc
-
 # Machine certs
 certmgr.msc
 
+# ADCS CA management
+certsrv.msc
+<# Extensions > AIA
+     http://bailey-dc1/ocsp
+     Checkem. 
+   Templates > manage
+     OCSP Response Signing > security
+     Auth Users: Read,Enroll,AutoEnroll
+   New Template to issue > OCSP
+#> 
+
+
 # OCSP 
 ocsp.msc
+<#  New revocation config
+   Do the thing now and it will say working
+   I mean if you didn't fuck it all up again lol.
+#> 
 
-<#
-    server manager post configuration
-    
-    cersrv > CA1 > properties
-    extensions > AIA
-    Add
-        http://<CaName>/ocsp
-    Check both boxes: include AIA and the other one
 
-    certsrv: templates > manage
-    OCSP > security > add Auth Users:(enroll,AutoEnroll)
-
-    Templates > new template to issue
-     OCSP > add
-
-    Ocsp.msc
-    revocation > add
-    Nexty next next
-
-#>
-
-# test: 
-certutil -pulse
 
 # ========================================================================== # 
+# Add trusted ROOT-CA
 
 # export ca cert
-certutil -ca.cert C:\fanco_ca.cer 
+certutil -ca.cert "Z:\Certs\fanco_ca.cer "
 
 # import root ca cert 
- certutil –f –dspublish “Z:\file.cer” RootCA
+ certutil –f –dspublish “Z:\Certs\Acme.cer” RootCA
 
+ GPUPDATE /FORCE 
+foreach ($j in (Get-ADComputer -server $i -filter {Enabled -eq $true} ).dnsHostName ) {
+    if (Test-NetConnection $j -ErrorAction SilentlyContinue) {
+        Write-Verbose "Updating policy on $j`:" -Verbose
+        Invoke-GPUpdate -Computer $j -Force -RandomDelayInMinutes 0 -Verbose -AsJob
+    }
+}
 
 # =========================================================================  #
 # ADFS Config
-
 
 Install-WindowsFeature ADFS-Federation -IncludeManagementTools -Restart
 
 <# post config and setup...#>
 # pg. 366 for Psh 
 
-Add-ADFSClaimsProviderTrust
-
-Add-ADFSRelyingPartyTrust
-
-Update-ADFSCertificate 
-
-
 setspn -s http/federation.fanco.local fanco\da 
 setspn -s http/fanco-fs.fanco.local fanco\da 
 
-"C:\Program Files (x86)\Windows Identity Foundation SDK\v4.0\Samples\Quick Start\Using Managed STS\ClaimsAwareWebAppWithManagedSTS"
+Add-DnsServerResourceRecordCName -name "Federation" -ZoneName "bailey.local" -HostNameAlias "bailey-fs.bailey.local" 
+Add-DnsServerResourceRecordCName -name "Federation" -ZoneName "noah.local" -HostNameAlias "Noah-fs.bailey.local" 
+
+certsrv.msc
+<# Duplicate web server cert, create ADFS-Server
+     Perms > NOAH-FS$ (enroll,AutoEnroll)
+   New > Cert to issue > ADFS-Server
+
+   On ADFS server: 
+   MMC.exe > ^m > certs > local machine
+   Personal > request new > AD cert policy > ADFS-Server
+   Config > Common Name: "federation.domain.local"
+   Done. 
+#> 
+
+# ------------------------------------------------------------------------ #
+# WEB SERVER:
+ 
+<# INSTALL SOME STUFF: 
+
+   Mount the ISO. because reasons. s
+
+   .NET 3.5 features
+   NET Framework 3.5
+   NET Framework 4.5
+   ASP.NET 4.5
+   IIS - WEB-SERVER
+     Application Development
+       ASP 3.5
+       ASP 4.5
+       NET Extensibility
+     Security Request filtering (or something)
+   Windows Identity Foundation 3.5
+#> 
+
+msiexec /i "Windows Identity Foundation SDK.msi"
+# S:\VirtualMachines\Mod3\WIDSDK.MSI < copy it into the VM or mount a share
+
+notepad "C:\Program Files (x86)\Windows Identity Foundation SDK\v4.0\Samples\Quick Start\Using Managed STS\Setup.bat"
+# CHANGE THE 0x7 to 0x8
+# THEN RUN IT. 
+
+# IIS management: 
+<# Server > Certs > new Domain Cert
+     Select NOAH-CA
+     CommonName = Name of server 
+     Everything else can be bullshat. 
+   Default Web Site > Bindings
+     443 -- HTTPS -- Add CERT > Done. 
+   ApplicationPools > New
+     Name WIFsamples (why?)
+   ClaimsAwareWebAppWithManagedSTS > basic settings
+     Application Pool > WIFsamples (again, why?)
+   WIFSamples > Advanced Settings 
+     Load User Profile >> TRUE
+#> 
+
+"C:\Program Files (x86)\Windows Identity Foundation SDK\v4.0\Samples\ `
+    Quick Start\Using Managed STS\ClaimsAwareWebAppWithManagedSTS"
+
+# ------------------------------------------------------------------ #
+# FEDERATION SERVER TRUSTS 
+<#
+ FS 2 >> RELYING >> WEB
+ FS 2 >> CLAIMS  >> FS 1
+ FS 1 >> RELYING >> FS2 
+
+ Pass thru auth
+ Claims rules: 
+   Windows Accnt name
+   UPN 
+ ALL TRUSTS. 
+
+#>
+# ------------------------------------------------------------------ #
+# TESTING AND EVID. 
 
 https://acme-web.acme.local/ClaimsAwareWebAppWithManagedSTS/
 
@@ -252,33 +309,24 @@ Get-AdfsClaimsProviderTrust | ? {$_.Name -like "*Bailey*"} | `
 
 Install-WindowsFeature ADRMS -IncludeManagementTools -Restart
 
+<# install RMS, complete post-install
+ # create dist. rights template
+ # create user rights assignments
+ # give users Emails. 
+ # GPO: 
+   Comp > pol > Admin Temp > Win Comp > Iexplore > Internet Control Panel 
+    > Security Page > Site To Zone Assignment List
+     - *.domain.local       1
+     - *.otherdomain.ca     1
 
-Install-AdfsFarm `
--CertificateThumbprint:"5151E727422AA744B7EE15EED49EE8467511C2B6" `
--FederationServiceDisplayName:"Fanco Org" `
--FederationServiceName:"federation.fanco.local" `
--ServiceAccountCredential:$serviceAccountCredential
+#> KLIST PURGE ; LOGOFF <#
+  # File > Protect doc
+#> 
 
-# create service account: 
-ADRMS-SVC
-
-<#
-  Problem: user has not been authenticated
-  It means: CA is not configured correctly
-    OSCP is not configured properly?
-    check out pg.424 later when you're more sane
-    443 for verifiying SPNs are correct? 
-#>
-
-
+inetcpl.cpl
 
 # =========================================================================== # 
 # make a public folder
 
-icacls /grant:r *S-1-5-11:(CI)(OI)(M)
-
-
-
- # ============================================================================= #
-
- whoami /groups
+icacls C:\directory /grant:r *S-1-5-11:(CI)(OI)(M)
+net share share=C:\Directory /grant:Everyone,Full 

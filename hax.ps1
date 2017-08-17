@@ -2,11 +2,12 @@
 
 wpeutil initializenetwork
 
+# start admin cmd
 schtasks /create /st:$date /SC:Once /RU:SYSTEM /TR:cmd.exe /tn:pwn
 
+# change pw policy
 wmic useraccount where name="Administrator" rename LocalAdmin
 net accounts /MinPwLen:0
-
 secedit /export /cfg C:\temp\policy.cfg
 (Get-Content C:\Temp\policy.cfg).Replace('\PasswordComplexity = 1\','PasswordComplexity = 0') `
  | Set-Content C:\Temp\policy.cfg
@@ -18,6 +19,7 @@ net user LocalAdmin * #enter, enter
 # cached creds
 cmdkey /list 
 
+# system info, app data
 wmic product get Name
 wmic startup get command
 
@@ -28,7 +30,8 @@ wmic process get name,threadcount,status
 wmic process where name="$toKill" terminate
 
 wmic useraccount get Name,SID
-wmic ntdomain get DomainControllerName,DomainName
+
+
 
 wmic volume get name,label,fileSystem,capacity
 wmic volume where name="D:\" dismount
@@ -42,6 +45,18 @@ net use \\ip-addr /user:comp\administrator *
 klist purge ; logoff 
 
 nltest --% /dsgetdc:<domain> [ /gc /kdc /pdc /force]
+
+wmic ntdomain get DomainControllerName,DomainName
+
+wmic computersystem joindomainorworkgroup Name=domainName Username=Admin Password=*
+
+wmic qfe get HotfixID,Description,InstalledOn
+
+wmic startup list
+
+wmic bootconfig list full
+
+mwic recoveros list full
 
 
 # config IPv6 prefix policy
