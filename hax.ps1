@@ -46,6 +46,8 @@ klist purge ; logoff
 
 nltest --% /dsgetdc:<domain> [ /gc /kdc /pdc /force]
 
+wmic useraccount get name,sid
+
 wmic ntdomain get DomainControllerName,DomainName
 
 wmic computersystem joindomainorworkgroup Name=domainName Username=Admin Password=*
