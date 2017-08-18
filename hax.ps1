@@ -47,6 +47,8 @@ klist purge ; logoff
 nltest --% /dsgetdc:<domain> [ /gc /kdc /pdc /force]
 
 wmic useraccount get name,sid
+wmic useraccount where name='username' set PasswordRequired=false
+wmic useraccount where name='username' rename 'newusername' 
 
 wmic ntdomain get DomainControllerName,DomainName
 
@@ -60,6 +62,16 @@ wmic bootconfig list full
 
 mwic recoveros list full
 
+wmic environment where name="NUMBER_OF_PROCESSORS" get caption,variableValue
+wmic environment where name="PATH" get username,variablevalue
+
+wmic service where name="WinRM" call StartService
+wmic service where state="Running" get name,pathName
+
+wmic process where name="taskmgr.exe" terminate
+wmic process where name="taskmgr.exe" getOwner
+
+wmic product where name="CrapWare" uninstall
 
 # config IPv6 prefix policy
 # Set it up:
