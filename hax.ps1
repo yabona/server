@@ -1,5 +1,4 @@
-﻿# daves faves
-
+# from install media, to connect to shares... 
 wpeutil initializenetwork
 
 # start admin cmd
@@ -70,6 +69,9 @@ wmic service where state="Running" get name,pathName
 
 wmic process where name="taskmgr.exe" terminate
 wmic process where name="taskmgr.exe" getOwner
+
+# stop the bloody xbox crap on W10
+(get-service | ? {$_.name -like "*xb*"}).stop() 
 
 wmic product where name="CrapWare" uninstall
 
