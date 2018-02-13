@@ -38,7 +38,7 @@ $TargetConfig = new-object -type PSCustomObject -Property:@{
     TargetName = "SAN"
     TargetPermittedInitiatorID = "IPaddress:10.1.53.100";
     ChapCredential = New-Object pscredential ("Chappie", $(ConvertTo-SecureString "Windows1Windows1" -asPlainText -force)) 
-}
+} # as a wise man once said, "THIS IS SHIT FOR BRAINS, DRUG INDUCED CRAP". that man made the #3 operating system in the world. 
 
 # Install feature and init service (run at boot)
 Install-windowsfeature FS-iscsiTarget-Server -includeManagementTools
@@ -55,7 +55,7 @@ Set-IscsiServerTarget -TargetName:$TargetConfig.TargetName -EnableChap:$true -ch
 # check your work: 
 Get-IscsiServerTarget
 (Get-IscsiServerTarget).Sessions 
-
+(Get-IscsiServerTarget).TargetIQN
 
 
 # register in ISNS server
@@ -63,3 +63,5 @@ Set-WmiInstance -Namespace root\wmi -class WT_iSNSServer -Arguments:@{ServerName
 
 # User iSNS server for discovery
 Set-WmiInstance -Namespace root\wmi -class WT_iSNSServer -Arguments:@{iSNSServerAddress="_SNS_SERVER_NAME_.LOCALDOMAIN"}
+
+# I don't think this even works tbqhfam
