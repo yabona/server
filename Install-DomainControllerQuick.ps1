@@ -1,5 +1,6 @@
 ﻿param (
     [paramater(mandatory=$true)][String]$domainName
+    [String]
 )
 
 Install-WindowsFeature ad-domain-services -IncludeManagementTools

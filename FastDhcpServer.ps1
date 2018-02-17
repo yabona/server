@@ -1,5 +1,5 @@
 ﻿# Give me DHCP dammit!
-# Run as DA, fuck best practices! 
+# Run as DA, fuck best practices!
 
 param(
   [Paramater(Mandatory=$True)]$TargetDomainController,
@@ -31,5 +31,5 @@ $RemoteCommandInvocation = {
 
 }
 
-# .. .. .. .. .. .. ..
+#-------------------------------------------------------------------------------
 Invoke-Command -computername:$TargetDomainController -Scriptblock:$RemoteCommandInvocation
