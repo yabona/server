@@ -1,6 +1,6 @@
 Write-host "
 Automagic server config-er
-# Yabones 2017 
+# Yabones 2018
 # open sourse asf pls send this to your aunt and grandparents and stuff
 "
 
@@ -13,12 +13,12 @@ Workflow Configure_System {
 
     # change hostname, requires system reload...
     Rename-Computer -NewName $hostname -force
-    
+
     # restart computer, then resume on restart...
     Restart-Computer -Wait
 
     # domain join
-    Add-computer -DomainName $domainName -restart -Credential $domainCred 
+    Add-computer -DomainName $domainName -restart -Credential $domainCred
 
     # todo :: add serverRole instalation step after this...
 }
@@ -27,7 +27,7 @@ Workflow Configure_System {
 # setup hostname
 $hostName = Read-Host "Hostname"
 $domainName = Read-host "AD Domain Name"
-$domainCred = Get-Credential 
+$domainCred = Get-Credential
 
 
 # Configure networking
@@ -53,8 +53,7 @@ do {
     [char]$continue = Read-Host "Continue? [Y/N]"
     if ($continue -eq 'N') {break}
 
-} while ($continue -eq 'Y') 
+} while ($continue -eq 'Y')
 
 # Proceed to call workflow
 Configure_System -hostname $hostName -domainname $domainname
-
