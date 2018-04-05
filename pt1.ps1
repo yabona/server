@@ -53,7 +53,7 @@ Get-IscsiSession | fl *
 # ====================================================================== #
 # Clustering
 install-windowsfeature Hyper-V,Failover-Clustering -includemanagementTools
-new-cluster -name [clustername] -node [node1],[node2] -staticAddress [192.168.200.30
+new-cluster -name [clustername] -node [node1],[node2] -staticAddress [192.168.200.30]
 	
 Set-ClusterQuorum -fileshareWitness \\dc\quorum
 	
