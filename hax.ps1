@@ -75,9 +75,15 @@ wmic process where name="taskmgr.exe" getOwner
 
 wmic product where name="CrapWare" uninstall
 
+
+New-NetFirewallRule -Name 'ICMP-IN' -Profile Any  -Direction Inbound -Protocol ICMPv4 -IcmpType 8 
+
+
 # config IPv6 prefix policy
 # Set it up:
 netsh interface ipv6 set prefixpolicy ::ffff:0:0/96 45 4
 
 #Revert to windows default:
 netsh interface ipv6 set prefixpolicy ::ffff:0:0/96 35 4
+
+
