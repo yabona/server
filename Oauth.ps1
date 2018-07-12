@@ -54,3 +54,51 @@ New-CSTrustedApplication -ApplicationID "OutlookWebApp" -TrustedApplicationPoolF
 
 # DO ITTTT
 Enable-CSTopology
+
+
+###################################################################################################################
+
+# sharepoint setup 
+
+msiexec /i EwsManagedApi.msi addlocal="ExchangeWebServicesApi_Feature,ExchangeWebServicesApi_Gac"
+
+net localgroup Administrators SPIntranet /add 
+
+# edit domain ACL 
+# add SPIntranet and add "replicate domain changes"
+
+New-SPTrustedSecurityTokenIssuer –MetadataEndpoint "https://autodiscover.s0717158.com/autodiscover/metadata/json/1" –isTrustBroker –Name "AutoDiscover-EXCH"
+
+<#
+error: there are no addresses available for this application 
+
+services on server > start app management service 
+start web services root application pool
+
+#>
+
+# Microsoft Identity Manager
+https://www.microsoft.com/en-us/download/confirmation.aspx?id=48244
+
+# SharePoint Connector
+https://www.microsoft.com/en-us/download/confirmation.aspx?id=41164
+
+# FIMSyncService SP1 update 
+https://www.microsoft.com/en-us/download/confirmation.aspx?id=54184
+
+# OfficeDev ps module for importing profiles
+https://github.com/OfficeDev/PnP-Tools
+
+
+
+
+
+
+$cred = New-Object pscredential ("administrator@s0717158.local", $("Windows1"|Convertto-securestring -AsPlainText -Force)) 
+
+cd C:\SPSync
+Import-Module .\sharepointsync.psm1 -force 
+
+Install-SharePointSyncConfiguration -Path C:\SPSync -ForestDnsName s0717158.local -ForestCredential:$cred -OrganizationalUnit 'ou=accounts,dc=s0717158,dc=com' -SharePointUrl http://sp:4130 -SharePointCredential:$cred -verbose
+
+Start-SharePointSync -confirm:$False | ft -auto 
